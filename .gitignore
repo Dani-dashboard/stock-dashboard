@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.DS_Store
+
+# Runtime/local-only state
+.public-tunnel-status.md
+logs/
+data/*.json
+data/*.jsonl
+data/kis-master/
+data/kis-token-cache.json

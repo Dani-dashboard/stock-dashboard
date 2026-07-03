@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Index Dashboard MVP</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0f172a; --panel:#111c33; --text:#e2e8f0; --muted:#94a3b8; --line:#263550; --green:#22c55e; --yellow:#f59e0b; --red:#ef4444; --gray:#94a3b8; --blue:#38bdf8; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#0f172a; color:var(--text); }
+    header { position:sticky; top:0; z-index:10; background:rgba(15,23,42,.94); backdrop-filter:blur(14px); border-bottom:1px solid rgba(148,163,184,.18); padding:14px 18px; display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    h1 { margin:0; font-size:22px; letter-spacing:-.04em; }
+    .sub { color:var(--muted); font-size:12px; margin-top:5px; }
+    .summary { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+    .pill { border:1px solid var(--line); background:rgba(17,28,51,.9); padding:6px 9px; border-radius:999px; font-size:12px; color:var(--muted); }
+    main { max-width:1500px; margin:0 auto; padding:16px 18px 34px; }
+    .notice { border:1px solid rgba(56,189,248,.22); background:rgba(17,28,51,.72); border-radius:16px; padding:13px 15px; margin-bottom:14px; color:var(--muted); font-size:13px; line-height:1.5; }
+    .mobileHero { display:none; }
+    .todayPanel { border:1px solid rgba(56,189,248,.30); background:linear-gradient(135deg,rgba(8,47,73,.78),rgba(17,28,51,.82)); border-radius:20px; padding:15px; margin-bottom:14px; box-shadow:0 16px 44px rgba(0,0,0,.18); }
+    .todayKicker { color:#67e8f9; font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; margin-bottom:5px; }
+    .todaySummary { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:11px; }
+    .todayTitle { margin:0; font-size:20px; letter-spacing:-.04em; color:#e0f2fe; }
+    .todayLine { margin-top:5px; color:#cbd5e1; font-size:13px; line-height:1.45; }
+    .issueStack { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:9px; }
+    .issueCard { border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.58); border-radius:15px; padding:11px; }
+    .issueCard.market { border-color:rgba(34,197,94,.28); background:rgba(20,83,45,.18); }
+    .issueTitle { font-size:13px; font-weight:800; line-height:1.35; }
+    .issueText { margin-top:5px; color:var(--muted); font-size:11.5px; line-height:1.42; }
+    .issueMeta { margin-top:8px; display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
+    .eventsPanel { border:1px solid rgba(56,189,248,.20); background:rgba(17,28,51,.72); border-radius:18px; padding:14px; margin:2px 0 18px; }
+    .eventsHead { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; }
+    .eventsTitle { margin:0; font-size:16px; color:#bae6fd; letter-spacing:-.03em; }
+    .eventsMeta { color:var(--muted); font-size:11px; line-height:1.35; text-align:right; }
+    .eventStrip { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px; margin-bottom:10px; }
+    .eventItem { border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.56); border-radius:14px; padding:10px; }
+    .eventTop { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-bottom:5px; }
+    .eventTime { font-size:12px; font-weight:800; color:#e0f2fe; }
+    .issueTime { font-size:10px; font-weight:800; color:#e0f2fe; border:1px solid rgba(56,189,248,.26); background:rgba(8,47,73,.34); border-radius:999px; padding:3px 7px; }
+    .impact { font-size:10px; border-radius:999px; padding:3px 6px; border:1px solid rgba(148,163,184,.25); }
+    .impact.high { color:#fecaca; border-color:rgba(239,68,68,.38); background:rgba(127,29,29,.24); }
+    .impact.medium { color:#fde68a; border-color:rgba(245,158,11,.38); background:rgba(120,53,15,.24); }
+    .impact.watch { color:#bfdbfe; border-color:rgba(56,189,248,.32); background:rgba(30,64,175,.2); }
+    .impact.info { color:#d1d5db; border-color:rgba(148,163,184,.28); background:rgba(71,85,105,.22); }
+    .eventName { font-size:13px; font-weight:750; }
+    .eventWhy { margin-top:5px; color:var(--muted); font-size:11.5px; line-height:1.42; }
+    .eventGroups { margin-top:7px; display:flex; gap:5px; flex-wrap:wrap; }
+    .eventGroup { font-size:10px; color:#cbd5e1; border:1px solid rgba(148,163,184,.18); border-radius:999px; padding:2px 6px; }
+    .eventsEmpty { color:var(--muted); font-size:12px; line-height:1.45; }
+    .weekCalendar { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:9px; }
+    .dayCard { border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.54); border-radius:15px; padding:10px; min-height:118px; }
+    .dayCard.today { border-color:rgba(56,189,248,.42); background:rgba(8,47,73,.38); }
+    .dayHead { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-bottom:8px; }
+    .dayName { font-weight:850; color:#e0f2fe; font-size:13px; }
+    .dayDate { color:var(--muted); font-size:10.5px; }
+    .miniEvent { padding:7px 0; border-top:1px solid rgba(148,163,184,.12); }
+    .miniEvent:first-of-type { border-top:0; padding-top:0; }
+    .miniTop { display:flex; gap:5px; flex-wrap:wrap; align-items:center; margin-bottom:3px; }
+    .miniTime { color:#bae6fd; font-size:10.5px; font-weight:800; }
+    .miniTitle { font-size:12px; font-weight:750; line-height:1.35; }
+    .miniWhy { color:var(--muted); font-size:10.8px; line-height:1.35; margin-top:3px; }
+    .structuralPanel { margin-top:12px; border-top:1px solid rgba(148,163,184,.16); padding-top:12px; }
+    .structuralTitle { font-size:13px; font-weight:850; color:#fde68a; margin-bottom:7px; }
+    .structuralGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px; }
+    .structuralCard { border:1px solid rgba(245,158,11,.24); background:rgba(120,53,15,.14); border-radius:14px; padding:10px; }
+    .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    .toolbtn { border:1px solid var(--line); background:rgba(24,36,60,.84); color:var(--text); border-radius:999px; padding:8px 11px; font-size:12px; cursor:pointer; }
+    .priorityGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px; margin-bottom:20px; }
+    .priorityCard { border:1px solid rgba(103,232,249,.22); background:rgba(8,47,73,.5); border-radius:15px; padding:12px; display:flex; flex-direction:column; gap:5px; }
+    .priorityCard .pname { font-size:12px; color:#bae6fd; }
+    .priorityCard .pvalue { font-size:23px; font-weight:850; letter-spacing:-.04em; }
+    .priorityCard .pchange { font-size:12px; color:var(--muted); text-align:right; }
+    .groupSummary { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; margin-bottom:18px; }
+    .groupPill { border:1px solid var(--line); background:rgba(24,36,60,.72); border-radius:14px; padding:11px; }
+    .groupPill strong { display:block; font-size:13px; margin-bottom:6px; color:#dbeafe; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .groupPill span { font-size:12px; color:var(--muted); }
+    details.groupBlock { margin-top:16px; border-top:1px solid rgba(148,163,184,.16); padding-top:13px; }
+    details.groupBlock > summary { cursor:pointer; list-style:none; display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:11px; }
+    details.groupBlock > summary::-webkit-details-marker { display:none; }
+    .groupTitle { margin:0; color:#bfdbfe; font-size:17px; }
+    .groupDesc { margin-top:4px; color:var(--muted); font-size:12px; }
+    .groupCounts { color:var(--muted); font-size:12px; white-space:nowrap; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+    .card { background:rgba(17,28,51,.9); border:1px solid var(--line); border-radius:16px; padding:14px; min-height:146px; }
+    .top { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+    .name { font-weight:750; font-size:14px; }
+    .meta { color:var(--muted); font-size:11px; margin-top:4px; }
+    .status { font-size:11px; padding:4px 7px; border-radius:999px; border:1px solid var(--line); white-space:nowrap; }
+    .status.ok { color:var(--green); } .status.warn { color:var(--yellow); } .status.error { color:var(--red); } .status.closed { color:var(--gray); }
+    .value { font-size:27px; font-weight:850; letter-spacing:-.045em; margin-top:14px; }
+    .change { margin-top:5px; font-size:12px; color:var(--muted); }
+    .change.pos { color:var(--green); } .change.neg { color:var(--red); }
+    .note { margin-top:9px; font-size:11.5px; line-height:1.45; color:#fbbf24; }
+    .note.error { color:#fca5a5; } .note.info { color:#bae6fd; }
+    .foot { margin-top:12px; color:var(--muted); font-size:10.5px; line-height:1.42; }
+    @media (max-width:720px) {
+      header { padding:12px 12px 10px; }
+      h1 { font-size:19px; }
+      .sub { font-size:11px; }
+      .summary { width:100%; gap:6px; }
+      .pill { font-size:11px; padding:5px 7px; }
+      main { padding:10px 10px 26px; }
+      .notice { display:none; }
+      .mobileHero { display:block; border:1px solid rgba(56,189,248,.22); background:rgba(14,116,144,.22); border-radius:16px; padding:12px; margin-bottom:10px; }
+      .todayPanel { padding:12px; margin-bottom:10px; border-radius:17px; }
+      .todaySummary { display:block; margin-bottom:9px; }
+      .todayTitle { font-size:17px; }
+      .todayLine { font-size:12px; }
+      .issueStack { grid-template-columns:1fr; gap:7px; }
+      .issueCard { padding:9px; }
+      .eventsPanel { padding:12px; margin-bottom:12px; border-radius:16px; }
+      .eventsHead { margin-bottom:8px; }
+      .eventsTitle { font-size:14px; }
+      .eventsMeta { font-size:10px; }
+      .eventStrip { grid-template-columns:1fr; gap:7px; margin-bottom:8px; }
+      .eventItem { padding:9px; }
+      .weekCalendar { display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; margin-right:-12px; }
+      .dayCard { min-width:230px; }
+      .structuralGrid { display:flex; gap:8px; overflow-x:auto; margin-right:-12px; }
+      .structuralCard { min-width:240px; }
+      .mobileHeroTitle { font-size:12px; color:#bae6fd; margin-bottom:6px; }
+      .mobileHeroStats { display:flex; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+      .toolbar { position:sticky; top:82px; z-index:9; overflow-x:auto; flex-wrap:nowrap; margin:0 -10px 12px; padding:7px 10px; background:rgba(15,23,42,.9); backdrop-filter:blur(10px); }
+      .toolbtn { flex:0 0 auto; padding:8px 11px; }
+      .priorityGrid { grid-template-columns:1fr; gap:7px; margin-bottom:14px; }
+      .priorityCard { min-height:0; padding:10px 12px; display:grid; grid-template-columns:minmax(112px,1fr) auto; column-gap:12px; row-gap:2px; align-items:baseline; }
+      .priorityCard .pname { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .priorityCard .pvalue { font-size:21px; text-align:right; white-space:nowrap; }
+      .priorityCard .pchange { grid-column:2; font-size:11px; line-height:1.1; }
+      .groupSummary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .groupPill { padding:9px; }
+      .groupPill strong { font-size:12px; }
+      .groupPill span { font-size:11px; }
+      details.groupBlock { margin-top:12px; padding-top:12px; }
+      .groupTitle { font-size:15px; }
+      .groupDesc { display:none; }
+      .groupCounts { font-size:11px; }
+      .grid { grid-template-columns:1fr; gap:9px; }
+      .card { padding:12px; min-height:0; }
+      .value { font-size:24px; margin-top:11px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>Index Dashboard MVP</h1><div class="sub">무료 소스 우선 · 1분 갱신 · 상태 투명 표시</div></div>
+    <div class="summary" id="summary"></div>
+  </header>
+  <main>
+    <div class="notice">무료 소스가 실패하면 값을 숨기지 않고 상태로 표시합니다. 불확실한 숫자는 표시하지 않고 검증 대기로 둡니다.</div>
+    <div id="todayIssues"></div>
+    <div class="toolbar"><button class="toolbtn" onclick="setAllGroups(true)">전체 펼치기</button><button class="toolbtn" onclick="setAllGroups(false)">전체 접기</button><button class="toolbtn" onclick="load()">새로고침</button></div>
+    <div id="mobileHero" class="mobileHero"></div>
+    <div id="content"></div>
+  </main>
+  <script>
+    const defaultFmt = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
+    const pctFmt = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2, signDisplay:'always' });
+    const DATA_BASE_URL = (window.STOCK_DASHBOARD_DATA_BASE_URL || 'https://fkjulfhlpkwavrxegaju.supabase.co/storage/v1/object/public/stock-dashboard/data').replace(/\/$/, '');
+    function dataUrl(file) { return `${DATA_BASE_URL}/${file}?ts=${Date.now()}`; }
+    function formatValue(value, decimals) { if (value == null) return '—'; if (Number.isInteger(decimals)) return new Intl.NumberFormat('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value); return defaultFmt.format(value); }
+    async function load() {
+      try {
+        const [marketRes, eventData] = await Promise.all([
+          fetch(dataUrl('latest.json')),
+          loadEvents()
+        ]);
+        if (!marketRes.ok) throw new Error('latest.json 로드 실패');
+        render(await marketRes.json(), eventData);
+      }
+      catch (err) { document.getElementById('summary').innerHTML = '<span class="pill">데이터 로드 오류</span>'; document.getElementById('content').innerHTML = `<div class="notice">${err.message}</div>`; }
+    }
+    async function loadEvents() {
+      try { const res = await fetch(dataUrl('events.json')); return res.ok ? await res.json() : { events: [], sourceNote:'events.json 없음' }; }
+      catch { return { events: [], sourceNote:'events.json 로드 실패' }; }
+    }
+    function render(data, eventData) {
+      document.getElementById('summary').innerHTML = `<span class="pill">생성 ${timeAgo(data.generatedAt)}</span><span class="pill">정상 ${data.summary.ok}</span><span class="pill">확인 ${data.summary.warn}</span><span class="pill">장종료 ${data.summary.closed}</span><span class="pill">오류 ${data.summary.error}</span>`;
+      document.getElementById('mobileHero').innerHTML = `<div class="mobileHeroTitle">모바일 빠른 현황</div><div class="mobileHeroStats"><span>정상 ${data.summary.ok}</span><span>확인 ${data.summary.warn}</span><span>장종료 ${data.summary.closed}</span><span>오류 ${data.summary.error}</span></div>`;
+      renderTodayIssues(data, eventData);
+      const groups = groupBy(data.metrics, x => x.group || 'Other');
+      const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
+      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data.metrics).join('')}</section>${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}`;
+      setTimeout(load, (data.refreshSeconds || 60) * 1000);
+    }
+
+    function renderTodayIssues(data, eventData) {
+      const manual = Array.isArray(eventData?.todayIssues) ? eventData.todayIssues : [];
+      const generatedSignals = Array.isArray(data.marketSignals) ? data.marketSignals : [...detectFxLevelIssues(data.fxLevels || []), ...detectMarketIssues(data.metrics || [])];
+      const marketIssues = generatedSignals;
+      const explicitTodayIssues = manual.filter(issue => issue.promoteToTodayIssue === true && issue.type !== 'scheduled_event');
+      const issues = [...marketIssues, ...explicitTodayIssues]
+        .map(issue => normalizeIssueTime(issue, data.generatedAt))
+        .filter(issue => isIssueWithinTodayWindow(issue))
+        .sort(compareIssuesNewestFirst)
+        .slice(0, 8);
+      const high = issues.filter(i => i.impact === 'High').length;
+      const watch = issues.filter(i => i.impact === 'Watch').length;
+      const summary = high ? `High 이슈 ${high}개가 있어 상단 모니터링이 필요합니다.` : watch ? `Watch 이슈 ${watch}개를 관찰 중입니다.` : '현재는 큰 이상 신호 없이 일반 모니터링 상태입니다.';
+      const body = issues.length ? `<div class="issueStack">${issues.map(issueCard).join('')}</div>` : '<div class="eventsEmpty">오늘 표시할 큰 이슈가 없습니다.</div>';
+      document.getElementById('todayIssues').innerHTML = `<section class="todayPanel"><div class="todaySummary"><div><div class="todayKicker">TODAY ISSUES</div><h2 class="todayTitle">오늘의 이슈</h2><div class="todayLine">${escapeHtml(summary)}</div></div><div class="eventsMeta">KST 기준<br>${escapeHtml(eventData?.mode || 'manual')}</div></div>${body}</section>`;
+    }
+
+    function detectMarketIssues(metrics) {
+      const watchIds = new Set(['usdkrw','dxy','nasdaq_f','spx_f','kospi','kospi200','kosdaq','btc','eth','ewy','sox']);
+      return metrics.filter(m => watchIds.has(m.id) && Math.abs(Number(m.changePct || 0)) >= 1)
+        .sort((a,b) => Math.abs(b.changePct || 0) - Math.abs(a.changePct || 0))
+        .slice(0, 3)
+        .map(m => ({ type:'market_move', title:`${m.name} ${pctFmt.format(m.changePct)}%`, impact:Math.abs(m.changePct) >= 2 ? 'High' : 'Watch', relatedGroups:[m.group].filter(Boolean), summary:`현재값 ${formatValue(m.value, m.decimals)}${m.unit || ''} · 1분 데이터 기준 변동률 감지`, status:'live' }));
+    }
+
+    function detectFxLevelIssues(levels) {
+      return levels.filter(x => ['below_support','above_resistance','near_support','near_resistance'].includes(x.status))
+        .map(x => {
+          const isBreak = x.status === 'below_support' || x.status === 'above_resistance';
+          const isUsdKrw = x.id === 'usdkrw';
+          const isKrwPair = ['usdkrw','eurkrw','jpykrw_100'].includes(x.id);
+          const fxTone = x.status === 'below_support'
+            ? isUsdKrw ? '원화 강세 / 달러 약세 압력' : isKrwPair ? '원화 강세 압력' : '하방 압력'
+            : x.status === 'above_resistance'
+              ? isUsdKrw ? '원화 약세 / 달러 강세 압력' : isKrwPair ? '원화 약세 압력' : '상방 압력'
+              : x.status === 'near_support'
+                ? isUsdKrw ? '원화 강세 흐름 속 지지선 테스트' : isKrwPair ? '원화 강세 흐름 속 지지선 테스트' : '지지선 테스트'
+                : isUsdKrw ? '원화 약세 전환 여부 테스트' : isKrwPair ? '원화 약세 전환 여부 테스트' : '저항선 테스트';
+          const direction = x.status === 'below_support' ? '5일 지지선 하향 이탈' : x.status === 'above_resistance' ? '5일 저항선 상향 돌파' : x.status === 'near_support' ? '5일 지지선 테스트' : '5일 저항선 테스트';
+          const line = x.status.includes('support') ? x.support : x.resistance;
+          return {
+            type:'fx_level',
+            title:`${x.label} ${direction} — ${fxTone}`,
+            impact:isBreak ? 'High' : 'Watch',
+            relatedGroups:['FX'],
+            summary:`현재 ${formatValue(x.current, 2)} · 기준선 ${formatValue(line, 2)} · 5일 평균 ${formatValue(x.average, 2)}. ${isBreak ? '단기 박스권 이탈 신호로 해석.' : '돌파/이탈 여부를 관찰.'}`,
+            status:isBreak ? 'break' : 'near'
+          };
+        });
+    }
+
+    function issueCard(e) {
+      const impact = String(e.impact || 'Watch');
+      const cls = impact.toLowerCase();
+      const groups = (e.relatedGroups || e.groups || []).map(g => `<span class="eventGroup">${escapeHtml(g)}</span>`).join('');
+      const marketCls = ['market_move','fx_level','kospi_volatility_level','credit_spread_level'].includes(e.type) ? ' market' : '';
+      const issueTime = formatIssueTime(e);
+      return `<article class="issueCard${marketCls}"><div class="eventTop"><span class="issueTime">${escapeHtml(issueTime)}</span><span class="impact ${cls}">${escapeHtml(impact)}</span>${e.status ? `<span class="eventGroup">${escapeHtml(e.status)}</span>` : ''}</div><div class="issueTitle">${escapeHtml(e.title || e.name || 'Unnamed issue')}</div>${e.summary ? `<div class="issueText">${escapeHtml(e.summary)}</div>` : ''}${groups ? `<div class="issueMeta">${groups}</div>` : ''}</article>`;
+    }
+
+    function normalizeIssueTime(issue, fallbackIso) {
+      const occurredAt = issue.occurredAt || issue.detectedAt || issue.generatedAt || issue.timestamp || fallbackIso || null;
+      return { ...issue, occurredAt };
+    }
+
+    function compareIssuesNewestFirst(a, b) {
+      const bTime = new Date(b.occurredAt || 0).getTime() || 0;
+      const aTime = new Date(a.occurredAt || 0).getTime() || 0;
+      if (bTime !== aTime) return bTime - aTime;
+      return issueImpactRank(b.impact) - issueImpactRank(a.impact);
+    }
+
+    function issueImpactRank(impact) {
+      return impact === 'High' ? 3 : impact === 'Medium' ? 2 : impact === 'Watch' ? 1 : 0;
+    }
+
+    function isIssueWithinTodayWindow(issue, now = new Date()) {
+      if (issue.expiresAt) {
+        const expires = new Date(issue.expiresAt);
+        if (!Number.isNaN(expires.getTime())) return now.getTime() < expires.getTime();
+      }
+      if (!issue.occurredAt) return true;
+      const occurred = new Date(issue.occurredAt);
+      if (Number.isNaN(occurred.getTime())) return true;
+      const ageMs = now.getTime() - occurred.getTime();
+      return ageMs <= 3 * 60 * 60 * 1000;
+    }
+
+    function formatIssueTime(issue) {
+      if (!issue.occurredAt) return '시간 미정';
+      const occurred = new Date(issue.occurredAt);
+      if (Number.isNaN(occurred.getTime())) return String(issue.occurredAt);
+      const label = occurred.toLocaleString('ko-KR', { timeZone:'Asia/Seoul', hour:'2-digit', minute:'2-digit', hour12:false });
+      return `${label} 발생`;
+    }
+
+    function weeklyCalendar(eventData) {
+      const days = Array.isArray(eventData?.weeklyEvents) ? eventData.weeklyEvents : [];
+      const todayKey = kstDateKey(new Date());
+      const structural = (Array.isArray(eventData?.structuralEvents) ? eventData.structuralEvents : [])
+        .filter(e => !e.date || e.date >= todayKey);
+      const source = (eventData?.sourceNotes || [])[0]?.name || 'manual';
+      const body = days.length ? `<div class="weekCalendar">${days.map(dayCard).join('')}</div>` : '<div class="eventsEmpty">이번주 일정은 아직 비어 있습니다. 오선 캘린더 포맷 확인 후 채울 예정입니다.</div>';
+      const structuralBody = structural.length ? `<div class="structuralPanel"><div class="structuralTitle">구조적 변동성 이벤트</div><div class="structuralGrid">${structural.map(structuralCard).join('')}</div></div>` : '';
+      return `<section class="eventsPanel"><div class="eventsHead"><h2 class="eventsTitle">이번주 일정</h2><div class="eventsMeta">모바일 캡처 아래 캘린더<br>출처: ${escapeHtml(source)}</div></div>${body}${structuralBody}</section>`;
+    }
+
+    function dayCard(day) {
+      const isToday = day.date === kstDateKey(new Date());
+      const events = (Array.isArray(day.events) ? day.events : []).filter(isPrimaryCalendarEvent);
+      return `<article class="dayCard ${isToday ? 'today' : ''}"><div class="dayHead"><div class="dayName">${isToday ? '오늘 ' : ''}${escapeHtml(day.dayLabel || '')}</div><div class="dayDate">${escapeHtml(day.date || '')}</div></div>${events.length ? events.map(miniEvent).join('') : '<div class="eventsEmpty">High 일정 없음</div>'}</article>`;
+    }
+
+    function isPrimaryCalendarEvent(e) {
+      return String(e.impact || 'Watch') === 'High';
+    }
+
+    function miniEvent(e) {
+      const impact = String(e.impact || 'Watch');
+      const cls = impact.toLowerCase();
+      const groups = (e.relatedGroups || e.groups || []).map(g => `<span class="eventGroup">${escapeHtml(g)}</span>`).join('');
+      return `<div class="miniEvent"><div class="miniTop"><span class="miniTime">${escapeHtml(e.timeKst || '미정')}</span><span class="impact ${cls}">${escapeHtml(impact)}</span></div><div class="miniTitle">${escapeHtml(e.title || e.name || 'Unnamed event')}</div>${e.summary ? `<div class="miniWhy">${escapeHtml(e.summary)}</div>` : ''}${groups ? `<div class="eventGroups">${groups}</div>` : ''}</div>`;
+    }
+
+    function structuralCard(e) {
+      const impact = String(e.impact || 'Watch');
+      const cls = impact.toLowerCase();
+      const groups = (e.relatedGroups || e.groups || []).map(g => `<span class="eventGroup">${escapeHtml(g)}</span>`).join('');
+      return `<article class="structuralCard"><div class="miniTop"><span class="miniTime">${escapeHtml(e.date || '')} · ${escapeHtml(e.timeKst || '')}</span><span class="impact ${cls}">${escapeHtml(impact)}</span>${e.status ? `<span class="eventGroup">${escapeHtml(e.status)}</span>` : ''}</div><div class="miniTitle">${escapeHtml(e.title || 'Structural event')}</div>${e.summary ? `<div class="miniWhy">${escapeHtml(e.summary)}</div>` : ''}${groups ? `<div class="eventGroups">${groups}</div>` : ''}</article>`;
+    }
+    function byTime(a,b) { return new Date(a.timeKst) - new Date(b.timeKst); }
+    function kstDateKey(date) { return new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' }).format(date); }
+    function eventTime(iso) { return iso ? new Date(iso).toLocaleString('ko-KR', { timeZone:'Asia/Seoul', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '시간 미정'; }
+    function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch])); }
+
+    function priorityCards(metrics) {
+      const ids = ['usdkrw','dxy','nasdaq_f','spx_f','kospi','kospi200','kosdaq','btc','ewy','kospi200_futures_kis','kospi200_night_futures_kis'];
+      return ids.map(id => metrics.find(m => m.id === id)).filter(Boolean).map(m => { const pct = m.changePct == null ? '—' : pctFmt.format(m.changePct) + '%'; const cls = m.changePct > 0 ? 'pos' : m.changePct < 0 ? 'neg' : ''; return `<article class="priorityCard"><div class="pname">${m.name}</div><div class="pvalue">${formatValue(m.value, m.decimals)} <span class="meta">${m.unit || ''}</span></div><div class="pchange ${cls}">${pct}</div></article>`; });
+    }
+    function groupPill(g) { return `<div class="groupPill"><strong>${g.label || g.key}</strong><span>정상 ${g.ok || 0} · 확인 ${g.warn || 0} · 종료 ${g.closed || 0} · 오류 ${g.error || 0}</span></div>`; }
+    function groupSection(g, items) { return `<details class="groupBlock" open><summary><div><h2 class="groupTitle">${g.label || g.key}</h2><div class="groupDesc">${g.description || ''}</div></div><div class="groupCounts">${items.length}개</div></summary><section class="grid">${items.map(card).join('')}</section></details>`; }
+    function card(m) {
+      const status = m.status || { level:'error', label:'장애' };
+      const changeClass = m.change > 0 ? 'pos' : m.change < 0 ? 'neg' : '';
+      const changeValue = formatValue(Math.abs(m.change || 0), m.decimals);
+      const change = m.change == null ? '변동값 없음' : `${m.change > 0 ? '+' : m.change < 0 ? '-' : ''}${changeValue} · ${pctFmt.format(m.changePct || 0)}%`;
+      return `<article class="card"><div class="top"><div><div class="name">${m.name}</div><div class="meta">${m.provider} · ${m.symbol}</div></div><div class="status ${status.level}">${status.label}</div></div><div class="value">${formatValue(m.value, m.decimals)} <span class="meta">${m.unit || ''}</span></div><div class="change ${changeClass}">${change}</div>${status.message ? `<div class="note error">${status.message}</div>` : ''}${m.delayNote ? `<div class="note">${m.delayNote}</div>` : ''}${m.displayNote ? `<div class="note info">${m.displayNote}</div>` : ''}<div class="foot">시장상태: ${status.marketState || '—'}<br>시세시각: ${m.timestamp ? new Date(m.timestamp).toLocaleString('ko-KR') : '—'}<br>수집시각: ${new Date(m.fetchedAt).toLocaleString('ko-KR')}</div></article>`;
+    }
+    function setAllGroups(open) { document.querySelectorAll('details.groupBlock').forEach(d => d.open = open); }
+    function groupBy(arr, fn) { return arr.reduce((acc,x)=>((acc[fn(x)] ||= []).push(x), acc), {}); }
+    function timeAgo(iso) { return iso ? new Date(iso).toLocaleString('ko-KR') : '—'; }
+    load();
+  </script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+{
+  "name": "stock-index-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch": "node scripts/fetch-all.mjs",
+    "publish:supabase": "node scripts/publish-supabase-storage.mjs",
+    "alerts": "node scripts/check-alerts.mjs",
+    "alert:email:test": "ALERT_EMAIL_TO=hummingscape@gmail.com ALERT_EMAIL_SUBJECT='[시장알림 테스트] stock-dashboard email path check' node scripts/send-email-alert.mjs",
+    "alert:gmail:setup": "node scripts/setup-gmail-smtp.mjs",
+    "alert:gmail:test": "ALERT_EMAIL_SUBJECT='[시장알림 테스트] Gmail SMTP alert path check' node scripts/send-gmail-smtp-alert.mjs",
+    "alert:gmail-api:setup": "node scripts/setup-gmail-api.mjs",
+    "alert:gmail-api:test": "ALERT_EMAIL_SUBJECT='[시장알림 테스트] Gmail API alert path check' node scripts/send-gmail-api-alert.mjs",
+    "alert:gmail-api:auth": "node scripts/gmail-api-authorize.mjs",
+    "serve": "python3 -m http.server 8787 --directory .",
+    "check": "node --check scripts/fetch-all.mjs && node --check scripts/publish-supabase-storage.mjs && node --check scripts/check-alerts.mjs && node --check scripts/send-email-alert.mjs && node --check scripts/setup-gmail-smtp.mjs && node --check scripts/send-gmail-smtp-alert.mjs && node --check scripts/setup-gmail-api.mjs && node --check scripts/gmail-api-authorize.mjs && node --check scripts/send-gmail-api-alert.mjs && node --check src/providers/yahoo.mjs && node --check src/providers/binance.mjs && node --check src/providers/naver.mjs && node --check src/providers/cnbc.mjs && node --check src/providers/fred.mjs && node --check src/providers/kis.mjs && node --check src/providers/chartlog.mjs && node --check src/providers/krxOfficial.mjs && node --check scripts/validate-events.mjs && node --check scripts/check-weekly-calendar-freshness.mjs && node scripts/validate-events.mjs",
+    "kis:token": "node scripts/kis-token-smoke.mjs",
+    "kis:token:force": "node scripts/kis-token-smoke.mjs --force",
+    "kis:rest": "node scripts/kis-rest-smoke.mjs",
+    "kis:credential-status": "node scripts/kis-credential-status.mjs",
+    "kis:ngt:ws-smoke": "node scripts/kis-ngt-ws-smoke.mjs",
+    "kis:ngt:collector": "node scripts/kis-ngt-collector.mjs",
+    "calendar:freshness": "node scripts/check-weekly-calendar-freshness.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "googleapis": "^171.4.0",
+    "nodemailer": "^8.0.7"
+  }
+}

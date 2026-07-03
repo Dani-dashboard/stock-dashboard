@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules
+logs
+data/kis-token-cache.json
+data/kis-master
+data/*.json
+research
