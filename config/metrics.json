@@ -450,6 +450,24 @@
     "metricOrder": 3
   },
   {
+    "id": "kospi_distance_60",
+    "name": "KOSPI 60일 이격도",
+    "group": "KR",
+    "provider": "naverIndexDistance",
+    "symbol": "KOSPI",
+    "naverCode": "KOSPI",
+    "unit": "%",
+    "decimals": 2,
+    "distancePeriod": 60,
+    "staleSeconds": 900,
+    "displayNote": "KOSPI 현재값을 최근 60거래일 평균으로 나눈 값입니다. 128 초과는 단기 과열 신호로 보고 09~11시 오늘의 이슈에 표시합니다.",
+    "delayNote": "네이버 KOSPI 기본값과 일봉 차트 기준 계산. 장중에는 오늘 현재값을 60일 평균 계산에 반영합니다.",
+    "groupOrder": 80,
+    "groupLabel": "한국 지수",
+    "groupDescription": "KOSPI·KOSPI200·KOSDAQ·이격도",
+    "metricOrder": 4
+  },
+  {
     "id": "ksvkospi",
     "name": "KOSPI 변동성지수",
     "group": "KIS",

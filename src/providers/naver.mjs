@@ -95,6 +95,114 @@ export async function fetchNaverIndexMetric(metric, { timeoutMs = 8000, staleSec
   }
 }
 
+export async function fetchNaverIndexDistanceMetric(metric, { timeoutMs = 8000, staleSeconds = 180 } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const code = metric.naverCode || metric.symbol || 'KOSPI';
+  const period = Number(metric.distancePeriod || 60);
+  const endDate = formatDateCompact(new Date());
+  const startDate = formatDateCompact(new Date(Date.now() - 370 * 24 * 60 * 60 * 1000));
+  const basicUrl = `https://m.stock.naver.com/api/index/${encodeURIComponent(code)}/basic`;
+  const chartUrl = `https://api.stock.naver.com/chart/domestic/index/${encodeURIComponent(code)}/day?startDateTime=${startDate}&endDateTime=${endDate}`;
+
+  try {
+    const headers = { 'user-agent': 'Mozilla/5.0 stock-dashboard-mvp/0.1', accept: 'application/json,text/plain,*/*' };
+    const [basicRes, chartRes] = await Promise.all([
+      fetch(basicUrl, { signal: controller.signal, headers }),
+      fetch(chartUrl, { signal: controller.signal, headers })
+    ]);
+    if (!basicRes.ok) throw new Error(`Naver index basic HTTP ${basicRes.status}`);
+    if (!chartRes.ok) throw new Error(`Naver index chart HTTP ${chartRes.status}`);
+
+    const basic = await basicRes.json();
+    const chart = await chartRes.json();
+    const current = parseNaverNumber(basic.closePrice);
+    if (current === null) throw new Error('Naver index distance has no current closePrice');
+    if (!Array.isArray(chart) || chart.length < period) throw new Error(`Naver index distance has only ${Array.isArray(chart) ? chart.length : 0} samples`);
+
+    const today = formatDateCompact(new Date());
+    const prices = chart
+      .map(row => ({ date: String(row.localDate || ''), close: parseNaverNumber(row.closePrice) }))
+      .filter(row => row.date && row.close !== null)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const last = prices[prices.length - 1];
+    if (last?.date === today) last.close = current;
+    else prices.push({ date: today, close: current });
+
+    const window = prices.slice(-period);
+    if (window.length < period) throw new Error(`Naver index distance has only ${window.length} usable samples`);
+    const movingAverage = window.reduce((sum, row) => sum + row.close, 0) / window.length;
+    const distance = movingAverage ? (current / movingAverage) * 100 : null;
+    if (distance === null || !Number.isFinite(distance)) throw new Error('Naver index distance calculation failed');
+
+    const timestamp = basic.localTradedAt || `${today.slice(0, 4)}-${today.slice(4, 6)}-${today.slice(6, 8)}T00:00:00+09:00`;
+    const marketStatus = basic.marketStatus || basic.stockExchangeType?.name || 'UNKNOWN';
+    const ageSeconds = timestamp ? Math.round((Date.now() - new Date(timestamp).getTime()) / 1000) : null;
+    const isClosed = ['CLOSE', 'CLOSED'].includes(String(marketStatus).toUpperCase());
+    const state = isClosed
+      ? closedStatus({ marketState: marketStatus, ageSeconds, message: `${period}일 이격도 계산값; current=${current}; ma${period}=${movingAverage.toFixed(2)}` })
+      : ageSeconds !== null && ageSeconds > staleSeconds
+        ? delayedStatus({ marketState: marketStatus, ageSeconds, message: `${period}일 이격도 quote is ${ageSeconds}s old; current=${current}; ma${period}=${movingAverage.toFixed(2)}` })
+        : okStatus({ marketState: marketStatus, ageSeconds, message: `${period}일 이격도; current=${current}; ma${period}=${movingAverage.toFixed(2)}` });
+
+    return {
+      id: metric.id,
+      name: metric.name,
+      group: metric.group,
+      groupOrder: metric.groupOrder,
+      groupLabel: metric.groupLabel,
+      groupDescription: metric.groupDescription,
+      provider: 'naverIndexDistance',
+      symbol: code,
+      unit: metric.unit || '',
+      decimals: metric.decimals,
+      displayNote: metric.displayNote || null,
+      value: normalizeValue(distance, metric.scale ?? 1),
+      change: null,
+      changePct: null,
+      timestamp,
+      fetchedAt: new Date().toISOString(),
+      status: state,
+      delayNote: metric.delayNote || null,
+      sourceUrl: chartUrl,
+      raw: {
+        current,
+        movingAverage,
+        period,
+        sampleCount: window.length,
+        firstSampleDate: window[0]?.date || null,
+        lastSampleDate: window[window.length - 1]?.date || null,
+        basicUrl,
+        chartUrl
+      }
+    };
+  } catch (err) {
+    return {
+      id: metric.id,
+      name: metric.name,
+      group: metric.group,
+      groupOrder: metric.groupOrder,
+      groupLabel: metric.groupLabel,
+      groupDescription: metric.groupDescription,
+      provider: 'naverIndexDistance',
+      symbol: code,
+      unit: metric.unit || '',
+      decimals: metric.decimals,
+      displayNote: metric.displayNote || null,
+      value: null,
+      change: null,
+      changePct: null,
+      timestamp: null,
+      fetchedAt: new Date().toISOString(),
+      status: failedStatus(err.name === 'AbortError' ? 'Naver index distance timeout' : err.message),
+      sourceUrl: chartUrl
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function fetchNaverFxMetric(metric, { timeoutMs = 8000, staleSeconds = 1800 } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -253,4 +361,13 @@ function parseNaverNumber(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(String(v).replace(/,/g, '').replace(/%/g, ''));
   return Number.isFinite(n) ? n : null;
+}
+
+function formatDateCompact(date) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date).replace(/-/g, '');
 }

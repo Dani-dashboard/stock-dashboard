@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { fetchYahooMetric } from '../src/providers/yahoo.mjs';
 import { fetchBinanceMetric } from '../src/providers/binance.mjs';
 import { fetchKisMetric, fetchKisFuturesBoardMetric, fetchKisBondYieldMetric } from '../src/providers/kis.mjs';
-import { fetchNaverIndexMetric, fetchNaverFxMetric, fetchNaverMarketIndexMetric } from '../src/providers/naver.mjs';
+import { fetchNaverIndexMetric, fetchNaverFxMetric, fetchNaverMarketIndexMetric, fetchNaverIndexDistanceMetric } from '../src/providers/naver.mjs';
 import { fetchCnbcQuoteMetric } from '../src/providers/cnbc.mjs';
 import { fetchFredMetric } from '../src/providers/fred.mjs';
 import { fetchChartlogKospiNightFuturesMetric } from '../src/providers/chartlog.mjs';
@@ -247,6 +247,7 @@ async function fetchMetric(metric) {
   if (metric.provider === 'naver') return fetchNaverIndexMetric(metric, { timeoutMs, staleSeconds: metricStaleSeconds });
   if (metric.provider === 'naverFx') return fetchNaverFxMetric(metric, { timeoutMs, staleSeconds: metricStaleSeconds });
   if (metric.provider === 'naverMarketIndex') return fetchNaverMarketIndexMetric(metric, { timeoutMs, staleSeconds: metricStaleSeconds });
+  if (metric.provider === 'naverIndexDistance') return fetchNaverIndexDistanceMetric(metric, { timeoutMs, staleSeconds: metricStaleSeconds });
   if (metric.provider === 'cnbc') return fetchCnbcQuoteMetric(metric, { timeoutMs, staleSeconds: metricStaleSeconds });
   if (metric.provider === 'fred') return fetchFredMetric(metric, { timeoutMs, staleSeconds: metricStaleSeconds });
   if (metric.provider === 'chartlogKospiNightFutures') return fetchChartlogKospiNightFuturesMetric(metric, { timeoutMs });
@@ -503,6 +504,8 @@ function buildMarketSignals(results, fxLevels = [], investorFlows = [], generate
   const metricById = new Map(results.map(metric => [metric.id, metric]));
 
   signals.push(...buildKoreaMarketSafetySignals(metricById, generatedAt));
+  const kospiDistanceSignal = buildKospiDistanceSignal(metricById.get('kospi_distance_60'), generatedAt);
+  if (kospiDistanceSignal) signals.push(kospiDistanceSignal);
   const kospiVolatilitySignal = buildKospiVolatilityLevelSignal(metricById.get('ksvkospi'), generatedAt);
   if (kospiVolatilitySignal) signals.push(kospiVolatilitySignal);
   const highYieldSpreadSignal = buildHighYieldSpreadLevelSignal(metricById.get('us_high_yield_spread'), generatedAt);
@@ -853,6 +856,45 @@ function buildKospiVolatilityLevelSignal(metric, generatedAt) {
     status: `vol_${level.key}`,
     ttlMinutes: Math.max(1, ttlMinutes)
   };
+}
+
+function buildKospiDistanceSignal(metric, generatedAt) {
+  if (!metric || metric.value === null || metric.value === undefined || metric.status?.level === 'error') return null;
+  if (!isKstKospiDistanceMorningWindow(generatedAt)) return null;
+
+  const distance = Number(metric.value);
+  const threshold = 128;
+  if (!Number.isFinite(distance) || distance <= threshold) return null;
+
+  const current = Number(metric.raw?.current);
+  const movingAverage = Number(metric.raw?.movingAverage);
+  const period = Number(metric.raw?.period || 60);
+  const sampleRange = [metric.raw?.firstSampleDate, metric.raw?.lastSampleDate].filter(Boolean).join('~');
+
+  return {
+    id: 'kr-kospi-distance-60-overheat',
+    type: 'kospi_distance_overheat',
+    title: `KOSPI ${period}일 이격도 ${fmt(distance, metric.decimals ?? 2)} — 과열 신호`,
+    impact: 'High',
+    relatedGroups: ['KR', 'Overheat'],
+    summary: `60일 이격도가 기준선 ${fmt(threshold, 0)}을 초과했습니다. 현재 KOSPI ${Number.isFinite(current) ? fmt(current, 2) : '—'} / ${period}일 평균 ${Number.isFinite(movingAverage) ? fmt(movingAverage, 2) : '—'} 기준. 단기 과열·추격매수 위험 신호로 보고 09~11시 KST에만 표시합니다.${sampleRange ? ` 표본 ${sampleRange}.` : ''}`,
+    source: `${metric.provider}:${metric.symbol}`,
+    dataTimestamp: metric.timestamp || metric.fetchedAt || generatedAt,
+    status: 'distance_over_128',
+    expiresAt: kstElevenAt(generatedAt).toISOString()
+  };
+}
+
+function isKstKospiDistanceMorningWindow(nowIso = new Date().toISOString()) {
+  const now = nowIso instanceof Date ? nowIso : new Date(nowIso);
+  const kst = partsInTimeZone(now, 'Asia/Seoul');
+  const minutes = kst.hour * 60 + kst.minute;
+  return minutes >= 9 * 60 && minutes < 11 * 60;
+}
+
+function kstElevenAt(nowIso = new Date().toISOString()) {
+  const kstDate = formatKstDate(new Date(nowIso));
+  return new Date(`${kstDate}T11:00:00+09:00`);
 }
 
 function koreaMarketOpenAt(nowIso = new Date().toISOString()) {

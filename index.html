@@ -238,7 +238,7 @@
       const impact = String(e.impact || 'Watch');
       const cls = impact.toLowerCase();
       const groups = (e.relatedGroups || e.groups || []).map(g => `<span class="eventGroup">${escapeHtml(g)}</span>`).join('');
-      const marketCls = ['market_move','fx_level','kospi_volatility_level','credit_spread_level'].includes(e.type) ? ' market' : '';
+      const marketCls = ['market_move','fx_level','kospi_volatility_level','credit_spread_level','kospi_distance_overheat'].includes(e.type) ? ' market' : '';
       const issueTime = formatIssueTime(e);
       return `<article class="issueCard${marketCls}"><div class="eventTop"><span class="issueTime">${escapeHtml(issueTime)}</span><span class="impact ${cls}">${escapeHtml(impact)}</span>${e.status ? `<span class="eventGroup">${escapeHtml(e.status)}</span>` : ''}</div><div class="issueTitle">${escapeHtml(e.title || e.name || 'Unnamed issue')}</div>${e.summary ? `<div class="issueText">${escapeHtml(e.summary)}</div>` : ''}${groups ? `<div class="issueMeta">${groups}</div>` : ''}</article>`;
     }
