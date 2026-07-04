@@ -225,7 +225,7 @@ async function requestKisWithRetry(request, env = process.env, { timeoutMs = 800
 }
 
 function isRetryableKisQuoteError(message = '') {
-  return /KIS HTTP 500|재 조회|초당 거래건수|timeout|aborted/i.test(String(message));
+  return /KIS HTTP 500|재 조회|초당 거래건수|timeout|aborted|fetch failed/i.test(String(message));
 }
 
 function sleep(ms) {
