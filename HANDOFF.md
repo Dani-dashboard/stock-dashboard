@@ -13,6 +13,7 @@ Build a mobile-first local stock/index/macro dashboard that refreshes market dat
 - **Never put AI/Codex in the 1-minute refresh loop.** AI is only for development, diagnostics, lower-frequency summaries, and user-requested interpretation.
 - If a free source fails or is stale, show the failure transparently instead of hiding it.
 - Dani usually checks on phone; prioritize compact mobile readability and at-a-glance scanning.
+- Dani uses the Vercel production dashboard for mobile checks. After UI/data updates, ensure the result is visible via Supabase publishing and/or Vercel production deployment, then verify against the Vercel site rather than the Cloudflare Quick Tunnel. Do not repeatedly send the verification link unless needed.
 - FX is important to Dani. USD/KRW, EUR/KRW, and JPY/KRW x100 should surface support/resistance breaks in `오늘의 이슈`.
 - Event layer direction:
   - Top: `오늘의 이슈` — major index sharp moves, specific/anomalous moves, FX support/resistance breaks, and today’s volatility-driving events.
