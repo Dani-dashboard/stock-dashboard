@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchYahooMetric } from '../src/providers/yahoo.mjs';
 import { fetchBinanceMetric } from '../src/providers/binance.mjs';
-import { fetchKisMetric, fetchKisFuturesBoardMetric, fetchKisBondYieldMetric } from '../src/providers/kis.mjs';
+import { fetchKisMetric, fetchKisFuturesBoardMetric, fetchKisBondYieldMetric, requestKis } from '../src/providers/kis.mjs';
 import { fetchNaverIndexMetric, fetchNaverFxMetric, fetchNaverMarketIndexMetric, fetchNaverIndexDistanceMetric } from '../src/providers/naver.mjs';
 import { fetchCnbcQuoteMetric } from '../src/providers/cnbc.mjs';
 import { fetchFredMetric } from '../src/providers/fred.mjs';
@@ -488,6 +488,32 @@ async function fetchKospiSpotVolume(generatedAt) {
 async function buildKospi200FuturesVolume(results, generatedAt) {
   const metric = results.find(item => item.id === 'kospi200_futures_kis');
   const currentVolume = numberOrNull(metric?.volume);
+  const kisHistory = metric?.symbol ? await fetchKisFuturesDailyVolume(metric.symbol, generatedAt) : null;
+  if (currentVolume !== null && kisHistory?.rows?.length) {
+    const rows = kisHistory.rows;
+    const currentDate = formatKstDateCompact(new Date(generatedAt));
+    const currentRow = rows.find(row => row.date === currentDate) || rows[0];
+    const adjustedRows = rows.map(row => row.date === currentRow?.date ? { ...row, volume: currentVolume } : row);
+    const max = adjustedRows.reduce((best, row) => row.volume > best.volume ? row : best, adjustedRows[0]);
+    const avg = adjustedRows.reduce((sum, row) => sum + row.volume, 0) / adjustedRows.length;
+    return buildVolumeItem({
+      id: 'kospi200_futures_volume',
+      label: 'KOSPI200 주간선물 거래량',
+      market: '선물',
+      currentVolume,
+      currentDate,
+      sixMonthMaxVolume: max.volume,
+      sixMonthMaxDate: max.date,
+      sixMonthAverageVolume: avg,
+      sampleCount: adjustedRows.length,
+      source: 'KIS 선물옵션기간별시세 일봉 acml_vol',
+      sourceUrl: kisHistory.sourceUrl,
+      basis: 'kis_100_trading_days',
+      periodLabel: `KIS ${adjustedRows.length}거래일`,
+      fetchedAt: new Date().toISOString()
+    });
+  }
+
   const history = await readVolumeSnapshotFile();
   const cutoff = new Date(new Date(generatedAt).getTime() - 190 * 24 * 60 * 60 * 1000).toISOString();
   const observed = Object.values(history.days || {}).flatMap(day => Array.isArray(day.kospi200_futures_volume) ? day.kospi200_futures_volume : [])
@@ -527,6 +553,33 @@ async function buildKospi200FuturesVolume(results, generatedAt) {
     basis: observed.length >= 20 ? 'local_observed_history' : 'local_observed_warming_up',
     fetchedAt: new Date().toISOString()
   });
+}
+
+async function fetchKisFuturesDailyVolume(symbol, generatedAt) {
+  try {
+    const endDate = formatKstDateCompact(new Date(generatedAt));
+    const startDate = formatKstDateCompact(new Date(new Date(generatedAt).getTime() - 190 * 24 * 60 * 60 * 1000));
+    const query = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: 'F',
+      FID_INPUT_ISCD: symbol,
+      FID_INPUT_DATE_1: startDate,
+      FID_INPUT_DATE_2: endDate,
+      FID_PERIOD_DIV_CODE: 'D'
+    }).toString();
+    const { json, url } = await requestKis({
+      path: '/uapi/domestic-futureoption/v1/quotations/inquire-daily-fuopchartprice',
+      trId: 'FHKIF03020100',
+      query
+    }, process.env, { timeoutMs });
+    const rows = Array.isArray(json.output2) ? json.output2
+      .map(row => ({ date: String(row.stck_bsop_date || ''), volume: numberOrNull(row.acml_vol) }))
+      .filter(row => row.date && row.volume !== null)
+      .sort((a, b) => b.date.localeCompare(a.date)) : [];
+    if (!rows.length) return { rows: [], sourceUrl: url, message: 'KIS futures daily history empty' };
+    return { rows, sourceUrl: url };
+  } catch (err) {
+    return { rows: [], sourceUrl: null, message: err.name === 'AbortError' ? 'KIS futures daily history timeout' : err.message };
+  }
 }
 
 function buildVolumeItem(input) {

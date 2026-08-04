@@ -232,9 +232,12 @@
       const status = item.status || 'warn';
       const maxPct = item.maxPct == null ? '—' : `${formatValue(item.maxPct, 1)}%`;
       const avgPct = item.avgPct == null ? '—' : `${formatValue(item.avgPct, 1)}%`;
-      const maxLabel = item.sixMonthMaxVolume == null ? '최대값 산출 대기' : `6개월 최대 ${formatInteger(item.sixMonthMaxVolume)}${item.sixMonthMaxDate ? ` (${formatCompactDate(item.sixMonthMaxDate)})` : ''}`;
+      const periodLabel = item.periodLabel || '최근 6개월';
+      const maxLabel = item.sixMonthMaxVolume == null ? '최대값 산출 대기' : `${periodLabel} 최대 ${formatInteger(item.sixMonthMaxVolume)}${item.sixMonthMaxDate ? ` (${formatCompactDate(item.sixMonthMaxDate)})` : ''}`;
       const basisNote = item.basis === 'six_month_history'
         ? '최근 6개월 일별 거래량 기준'
+        : item.basis === 'kis_100_trading_days'
+          ? 'KIS 일봉 히스토리 기준'
         : item.basis === 'local_observed_warming_up'
           ? '선물 6개월 히스토리 소스 확정 전: 로컬 관측치 축적 중'
           : item.basis === 'local_observed_history'
