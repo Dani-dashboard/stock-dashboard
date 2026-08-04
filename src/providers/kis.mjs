@@ -180,11 +180,21 @@ export async function fetchKisFuturesBoardMetric(metric, { timeoutMs = 8000 } = 
       value,
       change: numberOrNull(row.futs_prdy_vrss),
       changePct: numberOrNull(row.futs_prdy_ctrt),
+      volume: numberOrNull(row.acml_vol),
+      openInterest: numberOrNull(row.hts_otst_stpl_qty),
       timestamp: null,
       fetchedAt: new Date().toISOString(),
       status: okStatus({ marketState: metric.activeMarket || 'KIS_FUTURES', message: `${row.hts_kor_isnm || 'futures'}; token ${tokenFromCache ? 'cache' : 'fresh'}${retryCount ? `; retry ${retryCount}` : ''}` }),
       sourceUrl: url,
-      rawName: row.hts_kor_isnm || null
+      rawName: row.hts_kor_isnm || null,
+      raw: {
+        high: numberOrNull(row.futs_hgpr),
+        low: numberOrNull(row.futs_lwpr),
+        theoreticalPrice: numberOrNull(row.hts_thpr),
+        remainingDays: numberOrNull(row.hts_rmnn_dynu),
+        ask: numberOrNull(row.futs_askp),
+        bid: numberOrNull(row.futs_bidp)
+      }
     };
     await writeKisFuturesBoardCache(metric.id, output);
     return output;

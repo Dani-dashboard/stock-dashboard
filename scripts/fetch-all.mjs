@@ -50,6 +50,7 @@ try {
   const intradayShapes = await fetchIntradayShapes();
   const officialMarketNotices = await fetchKrxMarketOperationNotices({ timeoutMs });
   const generatedAt = new Date().toISOString();
+  const marketVolumes = await fetchMarketVolumes(results, generatedAt);
   const officialMarketSafetyEvents = extractKoreaMarketSafetyEvents(officialMarketNotices.notices, new Date(generatedAt));
   const rawMarketSignals = buildMarketSignals(results, fxLevels, investorFlows, generatedAt, intradayShapes);
   const marketSignals = await applyMarketSignalOccurrenceState(rawMarketSignals, generatedAt);
@@ -59,6 +60,7 @@ try {
     summary,
     fxLevels,
     investorFlows,
+    marketVolumes,
     intradayShapes,
     officialMarketNotices,
     officialMarketSafetyEvents,
@@ -425,7 +427,199 @@ async function fetchInvestorFlows() {
   return flows;
 }
 
+async function fetchMarketVolumes(results, generatedAt) {
+  const kospi = await fetchKospiSpotVolume(generatedAt);
+  const futures = await buildKospi200FuturesVolume(results, generatedAt);
+  const items = [kospi, futures].filter(Boolean);
+  const snapshots = await updateVolumeSnapshots(items, generatedAt);
+  return {
+    generatedAt,
+    checkpointsKst: ['10:00', '12:00', '15:30', '16:35'],
+    items: items.map(item => ({ ...item, snapshots: snapshots[item.id] || [] }))
+  };
+}
+
+async function fetchKospiSpotVolume(generatedAt) {
+  const endDate = formatKstDateCompact(new Date(generatedAt));
+  const startDate = formatKstDateCompact(new Date(new Date(generatedAt).getTime() - 190 * 24 * 60 * 60 * 1000));
+  const url = `https://api.stock.naver.com/chart/domestic/index/KOSPI/day?startDateTime=${startDate}&endDateTime=${endDate}`;
+  try {
+    const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 stock-dashboard-mvp/0.1', accept: 'application/json,text/plain,*/*' }, signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) throw new Error(`Naver KOSPI volume HTTP ${res.status}`);
+    const json = await res.json();
+    const rows = Array.isArray(json) ? json
+      .map(row => ({ date: String(row.localDate || ''), volume: numberOrNull(row.accumulatedTradingVolume) }))
+      .filter(row => row.date && row.volume !== null)
+      .sort((a, b) => a.date.localeCompare(b.date)) : [];
+    if (!rows.length) throw new Error('Naver KOSPI volume has no usable rows');
+    const current = rows[rows.length - 1];
+    const max = rows.reduce((best, row) => row.volume > best.volume ? row : best, rows[0]);
+    const avg = rows.reduce((sum, row) => sum + row.volume, 0) / rows.length;
+    return buildVolumeItem({
+      id: 'kospi_spot_volume',
+      label: 'KOSPI 현물 거래량',
+      market: '현물',
+      currentVolume: current.volume,
+      currentDate: current.date,
+      sixMonthMaxVolume: max.volume,
+      sixMonthMaxDate: max.date,
+      sixMonthAverageVolume: avg,
+      sampleCount: rows.length,
+      source: 'Naver domestic index day chart',
+      sourceUrl: url,
+      basis: 'six_month_history',
+      fetchedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    return {
+      id: 'kospi_spot_volume',
+      label: 'KOSPI 현물 거래량',
+      market: '현물',
+      currentVolume: null,
+      status: 'error',
+      message: err.name === 'AbortError' ? 'Naver KOSPI volume timeout' : err.message,
+      source: 'Naver domestic index day chart',
+      sourceUrl: url,
+      fetchedAt: new Date().toISOString()
+    };
+  }
+}
+
+async function buildKospi200FuturesVolume(results, generatedAt) {
+  const metric = results.find(item => item.id === 'kospi200_futures_kis');
+  const currentVolume = numberOrNull(metric?.volume);
+  const history = await readVolumeSnapshotFile();
+  const cutoff = new Date(new Date(generatedAt).getTime() - 190 * 24 * 60 * 60 * 1000).toISOString();
+  const observed = Object.values(history.days || {}).flatMap(day => Array.isArray(day.kospi200_futures_volume) ? day.kospi200_futures_volume : [])
+    .filter(row => row?.capturedAt >= cutoff && numberOrNull(row.volume) !== null)
+    .map(row => ({ date: String(row.date || '').replace(/-/g, ''), volume: numberOrNull(row.volume), capturedAt: row.capturedAt }));
+  if (currentVolume !== null) observed.push({ date: formatKstDateCompact(new Date(generatedAt)), volume: currentVolume, capturedAt: generatedAt });
+  const max = observed.length ? observed.reduce((best, row) => row.volume > best.volume ? row : best, observed[0]) : null;
+  const avg = observed.length ? observed.reduce((sum, row) => sum + row.volume, 0) / observed.length : null;
+
+  if (!metric || currentVolume === null) {
+    return {
+      id: 'kospi200_futures_volume',
+      label: 'KOSPI200 주간선물 거래량',
+      market: '선물',
+      currentVolume: null,
+      status: 'warn',
+      message: metric?.status?.message || 'KIS futures current volume unavailable',
+      source: 'KIS display-board-futures acml_vol',
+      sourceUrl: metric?.sourceUrl || null,
+      basis: 'kis_current_only',
+      fetchedAt: new Date().toISOString()
+    };
+  }
+
+  return buildVolumeItem({
+    id: 'kospi200_futures_volume',
+    label: 'KOSPI200 주간선물 거래량',
+    market: '선물',
+    currentVolume,
+    currentDate: formatKstDateCompact(new Date(generatedAt)),
+    sixMonthMaxVolume: max?.volume ?? currentVolume,
+    sixMonthMaxDate: max?.date || formatKstDateCompact(new Date(generatedAt)),
+    sixMonthAverageVolume: avg,
+    sampleCount: observed.length,
+    source: 'KIS display-board-futures acml_vol; max/avg is local observed history until an official 6-month futures history source is confirmed',
+    sourceUrl: metric.sourceUrl || null,
+    basis: observed.length >= 20 ? 'local_observed_history' : 'local_observed_warming_up',
+    fetchedAt: new Date().toISOString()
+  });
+}
+
+function buildVolumeItem(input) {
+  if (input.basis === 'local_observed_warming_up') {
+    return {
+      ...input,
+      maxPct: null,
+      avgPct: null,
+      status: 'warn',
+      intensity: '축적중',
+      message: input.message || '선물 6개월 최대 거래량 기준은 공식 히스토리 소스 확정 전이라 로컬 관측치를 축적 중입니다.'
+    };
+  }
+  const maxPct = input.currentVolume !== null && input.sixMonthMaxVolume ? (input.currentVolume / input.sixMonthMaxVolume) * 100 : null;
+  const avgPct = input.currentVolume !== null && input.sixMonthAverageVolume ? (input.currentVolume / input.sixMonthAverageVolume) * 100 : null;
+  const intensity = volumeIntensity(maxPct);
+  return {
+    ...input,
+    maxPct,
+    avgPct,
+    status: input.status || intensity.status,
+    intensity: intensity.label,
+    message: input.message || intensity.message
+  };
+}
+
+function volumeIntensity(maxPct) {
+  if (maxPct === null || maxPct === undefined || !Number.isFinite(Number(maxPct))) return { status: 'warn', label: '산출대기', message: '거래량 기준값을 아직 계산하지 못했습니다.' };
+  if (maxPct >= 85) return { status: 'high', label: '과열/이벤트성', message: '최근 최대 거래량에 근접한 강한 거래량입니다.' };
+  if (maxPct >= 60) return { status: 'active', label: '활발', message: '최근 6개월 최대치 대비 거래가 활발합니다.' };
+  if (maxPct >= 30) return { status: 'normal', label: '보통', message: '최근 6개월 최대치 대비 보통 수준입니다.' };
+  return { status: 'quiet', label: '한산', message: '최근 6개월 최대치 대비 거래량은 아직 낮은 편입니다.' };
+}
+
+async function updateVolumeSnapshots(items, generatedAt) {
+  const file = path.join(root, 'data/volume-snapshots.json');
+  const state = await readVolumeSnapshotFile();
+  state.days ||= {};
+  const date = formatKstDate(new Date(generatedAt));
+  state.days[date] ||= {};
+  const checkpoints = ['10:00', '12:00', '15:30', '16:35'];
+  const currentMinutes = kstMinutes(new Date(generatedAt));
+  for (const item of items) {
+    if (numberOrNull(item.currentVolume) === null) continue;
+    state.days[date][item.id] ||= [];
+    const rows = state.days[date][item.id];
+    for (const checkpoint of checkpoints) {
+      const target = checkpointToMinutes(checkpoint);
+      if (currentMinutes < target || currentMinutes > target + 10) continue;
+      if (rows.some(row => row.checkpointKst === checkpoint)) continue;
+      rows.push({ checkpointKst: checkpoint, date, volume: item.currentVolume, maxPct: item.maxPct ?? null, avgPct: item.avgPct ?? null, intensity: item.intensity || null, capturedAt: generatedAt });
+    }
+  }
+  pruneVolumeSnapshotState(state, generatedAt);
+  state.updatedAt = generatedAt;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await writeJsonAtomic(file, state);
+  return Object.fromEntries(items.map(item => [item.id, state.days[date]?.[item.id] || []]));
+}
+
+async function readVolumeSnapshotFile() {
+  try {
+    return JSON.parse(await fs.readFile(path.join(root, 'data/volume-snapshots.json'), 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') return { days: {} };
+    return { days: {}, readError: err.message };
+  }
+}
+
+function pruneVolumeSnapshotState(state, generatedAt) {
+  const cutoff = formatKstDate(new Date(new Date(generatedAt).getTime() - 210 * 24 * 60 * 60 * 1000));
+  for (const date of Object.keys(state.days || {})) {
+    if (date < cutoff) delete state.days[date];
+  }
+}
+
+function kstMinutes(date) {
+  const p = partsInTimeZone(date, 'Asia/Seoul');
+  return p.hour * 60 + p.minute;
+}
+
+function checkpointToMinutes(checkpoint) {
+  const [hour, minute] = String(checkpoint).split(':').map(Number);
+  return hour * 60 + minute;
+}
+
 function parseKrxNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(String(value).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function numberOrNull(value) {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(String(value).replace(/,/g, ''));
   return Number.isFinite(n) ? n : null;

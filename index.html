@@ -72,6 +72,26 @@
     .priorityCard .pname { font-size:12px; color:#bae6fd; padding-right:14px; }
     .priorityCard .pvalue { font-size:23px; font-weight:850; letter-spacing:-.04em; }
     .priorityCard .pchange { font-size:12px; color:var(--muted); text-align:right; }
+    .volumePanel { border:1px solid rgba(34,197,94,.22); background:rgba(20,83,45,.15); border-radius:18px; padding:14px; margin:0 0 18px; }
+    .volumeHead { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; }
+    .volumeTitle { margin:0; font-size:16px; color:#bbf7d0; letter-spacing:-.03em; }
+    .volumeGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:9px; }
+    .volumeCard { border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.56); border-radius:15px; padding:11px; }
+    .volumeTop { display:flex; justify-content:space-between; gap:9px; align-items:flex-start; margin-bottom:7px; }
+    .volumeName { font-size:13px; font-weight:850; color:#dcfce7; }
+    .volumeBadge { font-size:10.5px; border:1px solid rgba(148,163,184,.24); border-radius:999px; padding:3px 7px; color:#d1d5db; white-space:nowrap; }
+    .volumeBadge.quiet { color:#bae6fd; border-color:rgba(56,189,248,.32); background:rgba(8,47,73,.22); }
+    .volumeBadge.normal { color:#e5e7eb; border-color:rgba(148,163,184,.30); background:rgba(71,85,105,.20); }
+    .volumeBadge.active { color:#fde68a; border-color:rgba(245,158,11,.36); background:rgba(120,53,15,.22); }
+    .volumeBadge.high { color:#fecaca; border-color:rgba(239,68,68,.38); background:rgba(127,29,29,.24); }
+    .volumeMain { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:end; }
+    .volumeValue { font-size:25px; font-weight:900; letter-spacing:-.045em; }
+    .volumePct { text-align:right; font-size:22px; font-weight:900; color:#86efac; }
+    .volumeSub { margin-top:5px; color:var(--muted); font-size:11.5px; line-height:1.42; }
+    .volumeTicks { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-top:9px; }
+    .volumeTick { border:1px solid rgba(148,163,184,.14); border-radius:10px; padding:6px; min-height:42px; }
+    .volumeTickTime { font-size:10px; color:#bbf7d0; font-weight:800; }
+    .volumeTickValue { margin-top:3px; font-size:11px; color:#cbd5e1; }
     .groupSummary { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; margin-bottom:18px; }
     .groupPill { border:1px solid var(--line); background:rgba(24,36,60,.72); border-radius:14px; padding:11px; }
     .groupPill strong { display:block; font-size:13px; margin-bottom:6px; color:#dbeafe; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -130,6 +150,13 @@
       .priorityCard .pname { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .priorityCard .pvalue { font-size:21px; text-align:right; white-space:nowrap; }
       .priorityCard .pchange { grid-column:2; font-size:11px; line-height:1.1; }
+      .volumePanel { padding:12px; margin-bottom:12px; border-radius:16px; }
+      .volumeTitle { font-size:14px; }
+      .volumeGrid { grid-template-columns:1fr; gap:7px; }
+      .volumeValue { font-size:22px; }
+      .volumePct { font-size:20px; }
+      .volumeTicks { overflow-x:auto; display:flex; margin-right:-12px; padding-bottom:2px; }
+      .volumeTick { min-width:78px; }
       .groupSummary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
       .groupPill { padding:9px; }
       .groupPill strong { font-size:12px; }
@@ -183,8 +210,47 @@
       renderTodayIssues(data, eventData);
       const groups = groupBy(data.metrics, x => x.group || 'Other');
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
-      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data.metrics).join('')}</section>${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}`;
+      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data.metrics).join('')}</section>${marketVolumePanel(data.marketVolumes)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}`;
       setTimeout(load, (data.refreshSeconds || 60) * 1000);
+    }
+
+    function marketVolumePanel(volumeData) {
+      const items = Array.isArray(volumeData?.items) ? volumeData.items : [];
+      if (!items.length) return '';
+      const checkpoints = Array.isArray(volumeData?.checkpointsKst) ? volumeData.checkpointsKst : ['10:00','12:00','15:30','16:35'];
+      return `<section class="volumePanel"><div class="volumeHead"><div><h2 class="volumeTitle">오늘 거래량 압력</h2><div class="volumeSub">KOSPI 현물 + KOSPI200 주간선물만 표시 · 코스닥/KOSPI200 현물 제외</div></div><div class="eventsMeta">스냅샷 ${checkpoints.join(' / ')} KST</div></div><div class="volumeGrid">${items.map(item => volumeCard(item, checkpoints)).join('')}</div></section>`;
+    }
+
+    function volumeCard(item, checkpoints) {
+      const status = item.status || 'warn';
+      const maxPct = item.maxPct == null ? '—' : `${formatValue(item.maxPct, 1)}%`;
+      const avgPct = item.avgPct == null ? '—' : `${formatValue(item.avgPct, 1)}%`;
+      const maxLabel = item.sixMonthMaxVolume == null ? '최대값 산출 대기' : `6개월 최대 ${formatInteger(item.sixMonthMaxVolume)}${item.sixMonthMaxDate ? ` (${formatCompactDate(item.sixMonthMaxDate)})` : ''}`;
+      const basisNote = item.basis === 'six_month_history'
+        ? '최근 6개월 일별 거래량 기준'
+        : item.basis === 'local_observed_warming_up'
+          ? '선물 6개월 히스토리 소스 확정 전: 로컬 관측치 축적 중'
+          : item.basis === 'local_observed_history'
+            ? '선물 로컬 관측 히스토리 기준'
+            : '기준값 확인 중';
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.label || item.id)}</div><div class="meta">${escapeHtml(item.market || '')} · ${escapeHtml(item.source || '')}</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(item.intensity || item.status || '확인')}</span></div><div class="volumeMain"><div><div class="volumeValue">${formatInteger(item.currentVolume)}</div><div class="volumeSub">${escapeHtml(maxLabel)}<br>평균 대비 ${escapeHtml(avgPct)} · ${escapeHtml(basisNote)}</div></div><div><div class="volumePct">${escapeHtml(maxPct)}</div><div class="meta">최대 대비</div></div></div>${item.message ? `<div class="note info">${escapeHtml(item.message)}</div>` : ''}<div class="volumeTicks">${checkpoints.map(cp => volumeTick(item, cp)).join('')}</div></article>`;
+    }
+
+    function volumeTick(item, checkpoint) {
+      const row = (Array.isArray(item.snapshots) ? item.snapshots : []).find(x => x.checkpointKst === checkpoint);
+      const pct = row?.maxPct == null ? '' : ` · ${formatValue(row.maxPct, 0)}%`;
+      return `<div class="volumeTick"><div class="volumeTickTime">${escapeHtml(checkpoint)}</div><div class="volumeTickValue">${row ? `${formatInteger(row.volume)}${pct}` : '대기'}</div></div>`;
+    }
+
+    function formatInteger(value) {
+      if (value == null || Number.isNaN(Number(value))) return '—';
+      return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Number(value));
+    }
+
+    function formatCompactDate(value) {
+      const s = String(value || '');
+      if (/^\d{8}$/.test(s)) return `${s.slice(4,6)}/${s.slice(6,8)}`;
+      return s;
     }
 
     function renderTodayIssues(data, eventData) {
