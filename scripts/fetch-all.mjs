@@ -54,6 +54,8 @@ try {
   const marketVolumes = await fetchMarketVolumes(results, generatedAt);
   const officialMarketSafetyEvents = extractKoreaMarketSafetyEvents(officialMarketNotices.notices, new Date(generatedAt));
   const rawMarketSignals = buildMarketSignals(results, fxLevels, investorFlows, generatedAt, intradayShapes);
+  const optionPositionSignal = await buildOptionPositionChangeSignal(putCallRatio, results, generatedAt);
+  if (optionPositionSignal) rawMarketSignals.push(optionPositionSignal);
   const marketSignals = await applyMarketSignalOccurrenceState(rawMarketSignals, generatedAt);
   const payload = {
     generatedAt,
@@ -639,6 +641,84 @@ function classifyPutCallRatio(value) {
   if (value <= 1.5) return { key: 'put_bias', label: '하방 경계', impact: 'Watch', guidance: '풋 헤지 증가 / 조정 경계' };
   if (value <= 2.0) return { key: 'risk_off', label: '강한 위험회피', impact: 'High', guidance: '하방 압력과 단기 과매도 가능성 동시 관찰' };
   return { key: 'panic_extreme', label: '공포 극단', impact: 'High', guidance: '추격 매도보다 반전 여부와 VKOSPI 동행 확인' };
+}
+
+async function buildOptionPositionChangeSignal(pcr, results, generatedAt) {
+  if (!pcr || !['ok', 'observing'].includes(pcr.status)) return null;
+  const view = classifyOptionPositionForSignal(pcr, results);
+  if (!view?.key || view.key === 'unknown') return null;
+  const file = path.join(root, 'data/option-position-state.json');
+  let prev = null;
+  try { prev = JSON.parse(await fs.readFile(file, 'utf8')); } catch {}
+  const next = { key: view.key, label: view.label, interpretation: view.interpretation, updatedAt: generatedAt };
+  await writeJsonAtomic(file, next);
+  if (prev?.key === view.key) return null;
+  if (!prev?.key) return null;
+  return {
+    id: `option-position-${view.key}`,
+    type: 'option_position_status_change',
+    title: `KOSPI200 옵션 해석 변화 — ${view.label}`,
+    impact: view.impact,
+    relatedGroups: ['KR', 'KIS', 'Options'],
+    summary: `${view.interpretation} 거래량 PCR ${fmt(pcr.volumePcr, 2)}, 포지션 PCR ${fmt(pcr.openInterestPcr, 2)}. 현재는 KIS active universe 관찰값이므로 공식 KRX EOD 검증 전까지 참고 신호로만 사용.`,
+    source: pcr.source || 'KIS active PCR cache',
+    dataTimestamp: pcr.cacheGeneratedAt || pcr.fetchedAt || generatedAt,
+    status: view.key,
+    occurredAt: generatedAt
+  };
+}
+
+function classifyOptionPositionForSignal(pcr, results = []) {
+  const volume = Number(pcr?.volumePcr);
+  const oi = Number(pcr?.openInterestPcr);
+  if (!Number.isFinite(volume) && !Number.isFinite(oi)) return { key: 'unknown' };
+  const metricById = new Map(results.map(metric => [metric.id, metric]));
+  const kospi200 = metricById.get('kospi200') || metricById.get('kospi200_futures_kis');
+  const priceChangePct = Number(kospi200?.changePct);
+  const volBand = optionPcrBand(volume);
+  const oiBand = optionPcrBand(oi);
+  let key = `vol_${volBand.key}_oi_${oiBand.key}`;
+  let label = `${volBand.label} / ${oiBand.label}`;
+  let interpretation = `거래량은 ${volBand.phrase}, 남아 있는 포지션은 ${oiBand.phrase}.`;
+  let impact = volBand.impact === 'High' || oiBand.impact === 'High' ? 'High' : 'Watch';
+  if (Number.isFinite(priceChangePct)) {
+    if (priceChangePct > 0.15 && volume < 0.85) {
+      key = `up_confirm_${oiBand.key}`;
+      label = '상승 흐름 확인';
+      interpretation = `KOSPI200은 오르고 옵션 거래도 콜 쪽이 상대적으로 활발해 상승 흐름을 확인하는 모습.`;
+      impact = 'Watch';
+    } else if (priceChangePct < -0.15 && volume > 1.15) {
+      key = `down_confirm_${oiBand.key}`;
+      label = '하방 경계 강화';
+      interpretation = `KOSPI200이 밀리는 가운데 풋 거래가 늘어 하방 헤지/위험회피가 커지는 모습.`;
+      impact = 'High';
+    } else if (priceChangePct > 0.15 && volume > 1.15) {
+      key = `up_with_hedge_${oiBand.key}`;
+      label = '상승 중 헤지 증가';
+      interpretation = `KOSPI200은 오르지만 옵션 쪽에서는 풋 거래가 늘어 상승 중 헤지가 붙는 모습.`;
+      impact = 'Watch';
+    } else if (priceChangePct < -0.15 && volume < 0.85) {
+      key = `down_pressure_easing_${oiBand.key}`;
+      label = '하락 압력 약화 가능';
+      interpretation = `KOSPI200은 밀리지만 풋 거래 압력은 약해져 하락 압력이 둔화될 가능성을 관찰.`;
+      impact = 'Watch';
+    }
+  }
+  if (Number.isFinite(oi) && oi >= 1.5) {
+    interpretation += ` 다만 미결제약정은 풋 쪽으로 강하게 기울어 남아 있는 헤지 포지션이 많은 편.`;
+    if (impact !== 'High') impact = 'Watch';
+  }
+  return { key, label, interpretation, impact };
+}
+
+function optionPcrBand(value) {
+  if (!Number.isFinite(value)) return { key: 'unknown', label: '확인 중', phrase: '확인 중', impact: 'Watch' };
+  if (value < 0.6) return { key: 'call_extreme', label: '콜 과열', phrase: '콜 쪽으로 과하게 몰림', impact: 'Watch' };
+  if (value < 0.85) return { key: 'call_bias', label: '콜 우세', phrase: '콜 쪽이 더 활발함', impact: 'Watch' };
+  if (value <= 1.15) return { key: 'neutral', label: '중립', phrase: '한쪽으로 크게 쏠리지 않음', impact: 'Watch' };
+  if (value <= 1.5) return { key: 'put_bias', label: '풋 우세', phrase: '풋 쪽으로 기움', impact: 'Watch' };
+  if (value <= 2.0) return { key: 'risk_off', label: '강한 위험회피', phrase: '풋 쪽 포지션이 강함', impact: 'High' };
+  return { key: 'panic_extreme', label: '공포 극단', phrase: '풋 쏠림이 극단적임', impact: 'High' };
 }
 
 async function requestKisPcrWithRetry(request, { timeoutMs = 15000, attempts = 3, baseDelayMs = 1200 } = {}) {

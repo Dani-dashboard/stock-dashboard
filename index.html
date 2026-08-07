@@ -214,6 +214,7 @@
       catch { return { events: [], sourceNote:'events.json 로드 실패' }; }
     }
     function render(data, eventData) {
+      window.__latestMetrics = Array.isArray(data.metrics) ? data.metrics : [];
       document.getElementById('summary').innerHTML = `<span class="pill">생성 ${timeAgo(data.generatedAt)}</span><span class="pill">정상 ${data.summary.ok}</span><span class="pill">확인 ${data.summary.warn}</span><span class="pill">장종료 ${data.summary.closed}</span><span class="pill">오류 ${data.summary.error}</span>`;
       document.getElementById('mobileHero').innerHTML = `<div class="mobileHeroTitle">모바일 빠른 현황 · 카드를 누르면 상세 지표로 이동</div><div class="mobileHeroStats"><span>정상 ${data.summary.ok}</span><span>확인 ${data.summary.warn}</span><span>장종료 ${data.summary.closed}</span><span>오류 ${data.summary.error}</span></div>`;
       renderTodayIssues(data, eventData);
@@ -249,13 +250,17 @@
       const contracts = pcr.coverage?.contractsRequested ? ` · ${formatInteger(pcr.coverage.contractsOk)}/${formatInteger(pcr.coverage.contractsRequested)}계약` : '';
       const age = pcr.ageSec == null ? '' : ` · ${formatValue(pcr.ageSec, 0)}초 전`;
       const sourceLabel = pcr.status === 'observing' ? `KIS active universe 관찰값${contracts}${age}` : `KIS 옵션전광판 기준`;
+      const optionView = classifyOptionPositionView(pcr, window.__latestMetrics || []);
+      const interpretationBox = ['ok', 'observing'].includes(pcr.status)
+        ? `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 해석</div><div class="meta">KOSPI200 움직임 + 거래량 PCR + 포지션 PCR 조합</div></div><span class="volumeBadge warn">관찰</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">${escapeHtml(optionView.interpretation)}<br><span class="meta">${escapeHtml(optionView.context)}</span></div></article>`
+        : '';
       const volumeNote = showValue
         ? `당일 누적거래량: 풋 ${putVol} / 콜 ${callVol} · 거래대금 PCR ${amount}`
         : (pcr.message || 'PCR 데이터 수집 오류');
       const oiNote = pcr.openInterestPcr == null
         ? '미결제약정 산출 대기'
         : `현재 미결제약정: 풋 ${putOi} / 콜 ${callOi} · 현재 포지션 기울기`;
-      return `<section class="volumePanel" id="pcr-panel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 풋콜 레시오</h2><div class="volumeSub">${escapeHtml(sourceLabel)} · 최근월물 ${escapeHtml(pcr.expiryMonth || '확인 중')} · 공식 KRX PCR과 교차확인 권장</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid"><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">오늘 누적 풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(state.label || pcr.status)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(volumeMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(volumeX100)}<br>${escapeHtml(volumeNote)}</div></div><div><div class="volumePct">${escapeHtml(ma3)}</div><div class="meta">3일 평균</div></div></div><div class="note info">${escapeHtml(state.guidance || '')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 포지션 PCR</div><div class="meta">미결제약정 풋 ÷ 콜</div></div><span class="volumeBadge warn">관찰</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(oiMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(oiX100)}<br>${escapeHtml(oiNote)}</div></div><div><div class="volumePct">${escapeHtml(formatRatio(pcr.amountPcr))}</div><div class="meta">거래대금 PCR</div></div></div><div class="note info">OI PCR은 현재 남아 있는 포지션의 풋/콜 기울기다. 방향성 자체보다 거래량 PCR과 같이 봐야 함.</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">CALL OI</div><div class="volumeTickValue">${escapeHtml(callOi)}</div></div><div class="volumeTick"><div class="volumeTickTime">PUT OI</div><div class="volumeTickValue">${escapeHtml(putOi)}</div></div></div></article></div></section>`;
+      return `<section class="volumePanel" id="pcr-panel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 풋콜 레시오</h2><div class="volumeSub">${escapeHtml(sourceLabel)} · 최근월물 ${escapeHtml(pcr.expiryMonth || '확인 중')} · 공식 KRX PCR과 교차확인 권장</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid">${interpretationBox}<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">오늘 누적 풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(state.label || pcr.status)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(volumeMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(volumeX100)}<br>${escapeHtml(volumeNote)}</div></div><div><div class="volumePct">${escapeHtml(ma3)}</div><div class="meta">3일 평균</div></div></div><div class="note info">${escapeHtml(state.guidance || '')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 포지션 PCR</div><div class="meta">미결제약정 풋 ÷ 콜</div></div><span class="volumeBadge warn">관찰</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(oiMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(oiX100)}<br>${escapeHtml(oiNote)}</div></div><div><div class="volumePct">${escapeHtml(formatRatio(pcr.amountPcr))}</div><div class="meta">거래대금 PCR</div></div></div><div class="note info">OI PCR은 현재 남아 있는 포지션의 풋/콜 기울기다. 방향성 자체보다 거래량 PCR과 같이 봐야 함.</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">CALL OI</div><div class="volumeTickValue">${escapeHtml(callOi)}</div></div><div class="volumeTick"><div class="volumeTickTime">PUT OI</div><div class="volumeTickValue">${escapeHtml(putOi)}</div></div></div></article></div></section>`;
     }
 
     function formatRatio(value) {
@@ -438,13 +443,12 @@
     function priorityCards(data) {
       const metrics = Array.isArray(data?.metrics) ? data.metrics : [];
       const ids = ['usdkrw','dxy','nasdaq_f','spx_f','kospi','kospi200','kosdaq','btc','ewy','kospi200_futures_kis','kospi200_night_futures_kis'];
-      const optionCard = optionPositionPriorityCard(data?.putCallRatio, metrics);
       const metricCards = ids.map(id => metrics.find(m => m.id === id)).filter(Boolean).map(m => {
         const pct = m.changePct == null ? '—' : pctFmt.format(m.changePct) + '%';
         const cls = m.changePct > 0 ? 'pos' : m.changePct < 0 ? 'neg' : '';
         return `<a class="priorityCard" href="#metric-${escapeAttr(m.id)}" onclick="jumpToMetric('${escapeJsString(m.id)}', event)" aria-label="${escapeAttr(m.name)} 상세 지표로 이동"><div class="pname">${escapeHtml(m.name)}</div><div class="pvalue">${formatValue(m.value, m.decimals)} <span class="meta">${escapeHtml(m.unit || '')}</span></div><div class="pchange ${cls}">${pct}</div></a>`;
       });
-      return optionCard ? [optionCard, ...metricCards] : metricCards;
+      return metricCards;
     }
 
     function optionPositionPriorityCard(pcr, metrics) {
