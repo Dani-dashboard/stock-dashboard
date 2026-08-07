@@ -525,7 +525,7 @@ async function fetchKospi200PutCallRatio(generatedAt) {
 
 async function readActivePutCallRatioProbe(generatedAt) {
   const file = path.join(root, 'data/kospi200-pcr-fullchain-probe.json');
-  const maxAgeSec = Number(process.env.PCR_ACTIVE_CACHE_MAX_AGE_SEC || 15 * 60);
+  const maxAgeSec = Number(process.env.PCR_ACTIVE_CACHE_MAX_AGE_SEC || 8 * 60 * 60);
   try {
     const probe = JSON.parse(await fs.readFile(file, 'utf8'));
     if (probe?.mode !== 'active') return null;
