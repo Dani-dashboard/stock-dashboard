@@ -450,8 +450,7 @@
       const view = classifyOptionPositionView(pcr, metrics);
       const vol = pcr.volumePcr == null ? '—' : formatRatio(pcr.volumePcr);
       const oi = pcr.openInterestPcr == null ? '—' : formatRatio(pcr.openInterestPcr);
-      const statusText = pcr.usableForSignal ? view.state : `검증중 · ${view.state}`;
-      return `<a class="priorityCard" href="#pcr-panel" onclick="jumpToElement('pcr-panel', event)" aria-label="KOSPI200 옵션 포지션 상태"><div class="pname">옵션 포지션 상태</div><div class="pvalue">${escapeHtml(statusText)}</div><div class="pchange ${escapeAttr(view.cls)}">VOL ${escapeHtml(vol)} · OI ${escapeHtml(oi)} · ${escapeHtml(view.combo)}</div></a>`;
+      return `<a class="priorityCard" href="#pcr-panel" onclick="jumpToElement('pcr-panel', event)" aria-label="KOSPI200 옵션 포지션 상태"><div class="pname">KOSPI200 옵션 상태</div><div class="pvalue">${escapeHtml(view.combo)}</div><div class="pchange ${escapeAttr(view.cls)}">거래량 PCR ${escapeHtml(vol)} · 포지션 PCR ${escapeHtml(oi)} · ${escapeHtml(view.state)}</div></a>`;
     }
 
     function classifyOptionPositionView(pcr, metrics) {
