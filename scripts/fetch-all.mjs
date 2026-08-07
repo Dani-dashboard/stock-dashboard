@@ -44,12 +44,13 @@ try {
     results.push(await fetchWithFallback(metric));
   }
 
+  const generatedAt = new Date().toISOString();
   const summary = summarize(results);
   const fxLevels = await fetchFxLevels(results);
   const investorFlows = await fetchInvestorFlows();
+  const putCallRatio = await fetchKospi200PutCallRatio(generatedAt);
   const intradayShapes = await fetchIntradayShapes();
   const officialMarketNotices = await fetchKrxMarketOperationNotices({ timeoutMs });
-  const generatedAt = new Date().toISOString();
   const marketVolumes = await fetchMarketVolumes(results, generatedAt);
   const officialMarketSafetyEvents = extractKoreaMarketSafetyEvents(officialMarketNotices.notices, new Date(generatedAt));
   const rawMarketSignals = buildMarketSignals(results, fxLevels, investorFlows, generatedAt, intradayShapes);
@@ -60,6 +61,7 @@ try {
     summary,
     fxLevels,
     investorFlows,
+    putCallRatio,
     marketVolumes,
     intradayShapes,
     officialMarketNotices,
@@ -425,6 +427,237 @@ async function fetchInvestorFlows() {
     }
   }
   return flows;
+}
+
+async function fetchKospi200PutCallRatio(generatedAt) {
+  const activeProbe = await readActivePutCallRatioProbe(generatedAt);
+  if (activeProbe) return activeProbe;
+
+  const base = {
+    id: 'kospi200_options_pcr',
+    label: 'KOSPI200 옵션 PCR',
+    market: 'KOSPI200 options',
+    basis: 'kis_display_board_callput_top100',
+    source: 'KIS 국내옵션전광판_콜풋 API; output1/output2 각 100행 집계',
+    sourcePath: '/uapi/domestic-futureoption/v1/quotations/display-board-callput',
+    generatedAt,
+    fetchedAt: new Date().toISOString()
+  };
+  try {
+    const listQuery = new URLSearchParams({
+      FID_COND_SCR_DIV_CODE: '509',
+      FID_COND_MRKT_DIV_CODE: '',
+      FID_COND_MRKT_CLS_CODE: ''
+    }).toString();
+    const listRes = await requestKisPcrWithRetry({
+      path: '/uapi/domestic-futureoption/v1/quotations/display-board-option-list',
+      trId: 'FHPIO056104C0',
+      query: listQuery
+    }, { timeoutMs });
+    const monthRows = Array.isArray(listRes.json.output) ? listRes.json.output : [];
+    const frontMonth = monthRows.find(row => row?.mtrt_yymm) || null;
+    if (!frontMonth) throw new Error(`KIS option month list empty: ${listRes.json.msg1 || 'no output'}`);
+
+    const callputQuery = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: 'O',
+      FID_COND_SCR_DIV_CODE: '20503',
+      FID_MRKT_CLS_CODE: 'CO',
+      FID_MTRT_CNT: String(frontMonth.mtrt_yymm),
+      FID_MRKT_CLS_CODE1: 'PO',
+      FID_COND_MRKT_CLS_CODE: ''
+    }).toString();
+    await sleep(1100);
+    const callputRes = await requestKisPcrWithRetry({
+      path: '/uapi/domestic-futureoption/v1/quotations/display-board-callput',
+      trId: 'FHPIF05030100',
+      query: callputQuery
+    }, { timeoutMs: Math.max(timeoutMs, 15000) });
+    const calls = Array.isArray(callputRes.json.output1) ? callputRes.json.output1 : [];
+    const puts = Array.isArray(callputRes.json.output2) ? callputRes.json.output2 : [];
+    if (!calls.length || !puts.length) throw new Error(`KIS callput output empty: ${callputRes.json.msg1 || 'no output'}`);
+
+    const call = summarizeOptionSide(calls);
+    const put = summarizeOptionSide(puts);
+    const volumePcr = ratioOrNull(put.volume, call.volume);
+    const amountPcr = ratioOrNull(put.amount, call.amount);
+    const openInterestPcr = ratioOrNull(put.openInterest, call.openInterest);
+    const limitedCoverage = calls.length >= 100 || puts.length >= 100;
+    const suspiciousCoverage = call.volume > 0 && put.volume === 0;
+    const usableForSignal = !limitedCoverage && !suspiciousCoverage;
+    const history = usableForSignal
+      ? await updatePutCallRatioHistory({ date: formatKstDate(new Date(generatedAt)), generatedAt, volumePcr, amountPcr, openInterestPcr })
+      : [];
+    const ma3 = movingAverage(history, 'volumePcr', 3);
+    const ma5 = movingAverage(history, 'volumePcr', 5);
+    return {
+      ...base,
+      status: usableForSignal ? 'ok' : 'limited',
+      message: usableForSignal ? null : 'KIS 전광판 반환 범위가 제한되어 PCR 신호로 사용 보류',
+      expiryMonth: String(frontMonth.mtrt_yymm),
+      expiryMonthCode: frontMonth.mtrt_yymm_code || null,
+      call,
+      put,
+      volumePcr,
+      amountPcr,
+      openInterestPcr,
+      volumePcrX100: volumePcr === null ? null : volumePcr * 100,
+      amountPcrX100: amountPcr === null ? null : amountPcr * 100,
+      openInterestPcrX100: openInterestPcr === null ? null : openInterestPcr * 100,
+      ma3,
+      ma5,
+      labelState: usableForSignal ? classifyPutCallRatio(ma3 ?? volumePcr) : { key: 'limited', label: '검증 대기', impact: 'Watch', guidance: '콜/풋 100행 제한 때문에 공식 PCR 대체값으로 쓰지 않음' },
+      historySampleCount: history.length,
+      usableForSignal,
+      limitedCoverage,
+      suspiciousCoverage,
+      warnings: [
+        'KIS 전광판 API는 콜/풋 각각 최대 100행만 반환하므로 KRX 공식 P/C Ratio와 차이가 날 수 있음',
+        '일중 자동 모니터링용 보조지표로 사용하고, 공식 수치는 KRX/HTS와 교차확인 권장'
+      ],
+      fetchedAt: new Date().toISOString()
+    };
+  } catch (err) {
+    return { ...base, status: 'error', message: err.name === 'AbortError' ? 'KIS PCR timeout' : err.message, fetchedAt: new Date().toISOString() };
+  }
+}
+
+async function readActivePutCallRatioProbe(generatedAt) {
+  const file = path.join(root, 'data/kospi200-pcr-fullchain-probe.json');
+  const maxAgeSec = Number(process.env.PCR_ACTIVE_CACHE_MAX_AGE_SEC || 15 * 60);
+  try {
+    const probe = JSON.parse(await fs.readFile(file, 'utf8'));
+    if (probe?.mode !== 'active') return null;
+    const probeTime = new Date(probe.generatedAt || probe.startedAt || 0).getTime();
+    if (!Number.isFinite(probeTime)) return null;
+    const ageSec = Math.max(0, (new Date(generatedAt).getTime() - probeTime) / 1000);
+    if (ageSec > maxAgeSec) return null;
+    const contractsRequested = numberOrNull(probe.coverage?.contractsRequested) ?? 0;
+    const contractsOk = numberOrNull(probe.coverage?.contractsOk) ?? 0;
+    const coveragePct = numberOrNull(probe.coverage?.coveragePct);
+    const expiry = Array.isArray(probe.selection?.selectedExpiries) ? probe.selection.selectedExpiries[0] : null;
+    const windowLabel = probe.selection?.expiryDetails?.[0]
+      ? `ATM ${probe.selection.expiryDetails[0].atmStrike ?? '확인'} ±${probe.selection.strikesAround ?? ''}`.trim()
+      : 'ATM window';
+    return {
+      id: 'kospi200_options_pcr',
+      label: 'KOSPI200 옵션 PCR',
+      market: 'KOSPI200 options',
+      basis: 'kis_active_atm_window_observation',
+      source: 'KIS 개별 옵션 inquire-price active universe cache',
+      sourcePath: '/uapi/domestic-futureoption/v1/quotations/inquire-price',
+      status: 'observing',
+      quality: 'OBSERVATION_ONLY',
+      message: 'KIS active universe 관찰값 · KRX 공식 EOD 검증 전이라 신호 사용 보류',
+      generatedAt,
+      fetchedAt: new Date().toISOString(),
+      cacheGeneratedAt: probe.generatedAt || null,
+      ageSec,
+      expiryMonth: expiry,
+      selection: probe.selection || null,
+      universe: probe.universe || null,
+      requestPolicy: probe.requestPolicy || null,
+      call: probe.call || null,
+      put: probe.put || null,
+      volumePcr: numberOrNull(probe.volumePcr),
+      amountPcr: numberOrNull(probe.amountPcr),
+      openInterestPcr: numberOrNull(probe.openInterestPcr),
+      volumePcrX100: numberOrNull(probe.volumePcrX100),
+      amountPcrX100: numberOrNull(probe.amountPcr) === null ? null : numberOrNull(probe.amountPcr) * 100,
+      openInterestPcrX100: numberOrNull(probe.openInterestPcr) === null ? null : numberOrNull(probe.openInterestPcr) * 100,
+      coverage: {
+        contractsRequested,
+        contractsOk,
+        contractsError: numberOrNull(probe.coverage?.contractsError) ?? Math.max(0, contractsRequested - contractsOk),
+        coveragePct,
+        universeCoveragePct: numberOrNull(probe.coverage?.universeCoveragePct)
+      },
+      ma3: null,
+      ma5: null,
+      labelState: {
+        key: 'observing',
+        label: '검증 중',
+        impact: 'Watch',
+        guidance: `${expiry || '최근월물'} ${windowLabel} 기준 관찰값. 공식 KRX EOD와 대조 전까지 매매 신호로 쓰지 않음.`
+      },
+      historySampleCount: 0,
+      usableForSignal: false,
+      limitedCoverage: true,
+      suspiciousCoverage: false,
+      warnings: [
+        'KIS active universe는 전체 5,224개 표준 옵션 중 ATM 주변 일부 계약만 조회한 관찰값임',
+        'KRX OpenAPI EOD opt_bydd_trd와 여러 거래일 reconciliation 전까지 LIVE/VERIFIED 신호로 승격하지 않음'
+      ]
+    };
+  } catch {
+    return null;
+  }
+}
+
+function summarizeOptionSide(rows) {
+  return rows.reduce((acc, row) => {
+    acc.rows += 1;
+    acc.volume += numberOrNull(row.acml_vol) ?? 0;
+    acc.amount += numberOrNull(row.acml_tr_pbmn) ?? 0;
+    acc.openInterest += numberOrNull(row.hts_otst_stpl_qty) ?? 0;
+    acc.openInterestChange += numberOrNull(row.otst_stpl_qty_icdc) ?? 0;
+    return acc;
+  }, { rows: 0, volume: 0, amount: 0, openInterest: 0, openInterestChange: 0 });
+}
+
+function ratioOrNull(numerator, denominator) {
+  if (numerator === null || numerator === undefined || denominator === null || denominator === undefined || Number(denominator) === 0) return null;
+  const ratio = Number(numerator) / Number(denominator);
+  return Number.isFinite(ratio) ? ratio : null;
+}
+
+async function updatePutCallRatioHistory(row) {
+  const file = path.join(root, 'data/put-call-ratio-history.json');
+  let history = [];
+  try {
+    history = JSON.parse(await fs.readFile(file, 'utf8'));
+    if (!Array.isArray(history)) history = [];
+  } catch {}
+  const next = history.filter(item => item.date !== row.date);
+  next.push(row);
+  next.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const pruned = next.slice(-90);
+  await writeJsonAtomic(file, pruned);
+  return pruned;
+}
+
+function movingAverage(rows, key, count) {
+  const values = rows.slice(-count).map(row => numberOrNull(row[key])).filter(v => v !== null);
+  if (!values.length) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+function classifyPutCallRatio(value) {
+  if (value === null || value === undefined) return { key: 'unknown', label: '확인 중', impact: 'Watch', guidance: 'PCR 산출 대기' };
+  if (value < 0.6) return { key: 'call_extreme', label: '콜 우세 과열', impact: 'Watch', guidance: '상방 심리는 강하지만 낙관 과열 경계' };
+  if (value < 0.85) return { key: 'call_bias', label: '콜 우세', impact: 'Watch', guidance: '비교적 risk-on / 상방 심리 우세' };
+  if (value <= 1.15) return { key: 'neutral', label: '중립', impact: 'Info', guidance: 'KOSPI200 옵션 심리는 정상 범위' };
+  if (value <= 1.5) return { key: 'put_bias', label: '하방 경계', impact: 'Watch', guidance: '풋 헤지 증가 / 조정 경계' };
+  if (value <= 2.0) return { key: 'risk_off', label: '강한 위험회피', impact: 'High', guidance: '하방 압력과 단기 과매도 가능성 동시 관찰' };
+  return { key: 'panic_extreme', label: '공포 극단', impact: 'High', guidance: '추격 매도보다 반전 여부와 VKOSPI 동행 확인' };
+}
+
+async function requestKisPcrWithRetry(request, { timeoutMs = 15000, attempts = 3, baseDelayMs = 1200 } = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await requestKis(request, process.env, { timeoutMs });
+    } catch (err) {
+      lastErr = err;
+      const message = err.name === 'AbortError' ? 'KIS PCR timeout' : err.message || '';
+      if (attempt >= attempts || !/초당 거래건수|재 조회|timeout|aborted|KIS HTTP 500/i.test(message)) break;
+      await sleep(baseDelayMs * attempt);
+    }
+  }
+  throw lastErr;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function fetchMarketVolumes(results, generatedAt) {

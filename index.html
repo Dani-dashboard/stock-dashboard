@@ -217,7 +217,7 @@
       renderTodayIssues(data, eventData);
       const groups = groupBy(data.metrics, x => x.group || 'Other');
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
-      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data.metrics).join('')}</section>${marketVolumePanel(data.marketVolumes)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}`;
+      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data.metrics).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}`;
       setTimeout(load, (data.refreshSeconds || 60) * 1000);
     }
 
@@ -226,6 +226,33 @@
       if (!items.length) return '';
       const checkpoints = Array.isArray(volumeData?.checkpointsKst) ? volumeData.checkpointsKst : ['10:00','12:00','15:30','16:35'];
       return `<section class="volumePanel"><div class="volumeHead"><div><h2 class="volumeTitle">오늘 거래량 압력</h2><div class="volumeSub">KOSPI 현물 + KOSPI200 주간선물만 표시 · 코스닥/KOSPI200 현물 제외</div></div><div class="eventsMeta">스냅샷 ${checkpoints.join(' / ')} KST</div></div><div class="volumeGrid">${items.map(item => volumeCard(item, checkpoints)).join('')}</div></section>`;
+    }
+
+    function putCallRatioPanel(pcr) {
+      if (!pcr) return '';
+      const state = pcr.labelState || { label: pcr.status || '확인', guidance: pcr.message || '' };
+      const showValue = ['ok', 'observing'].includes(pcr.status) && pcr.volumePcr != null;
+      const status = pcr.status === 'ok' ? state.key || 'ok' : pcr.status === 'observing' ? 'warn' : 'warn';
+      const main = showValue ? formatRatio(pcr.volumePcr) : '—';
+      const x100 = showValue ? formatValue(pcr.volumePcrX100, 0) : '—';
+      const ma3 = pcr.ma3 == null ? '축적 중' : formatRatio(pcr.ma3);
+      const ma5 = pcr.ma5 == null ? '축적 중' : formatRatio(pcr.ma5);
+      const amount = pcr.amountPcr == null ? '—' : formatRatio(pcr.amountPcr);
+      const oi = pcr.openInterestPcr == null ? '—' : formatRatio(pcr.openInterestPcr);
+      const callVol = pcr.call?.volume == null ? '—' : formatInteger(pcr.call.volume);
+      const putVol = pcr.put?.volume == null ? '—' : formatInteger(pcr.put.volume);
+      const contracts = pcr.coverage?.contractsRequested ? ` · ${formatInteger(pcr.coverage.contractsOk)}/${formatInteger(pcr.coverage.contractsRequested)}계약` : '';
+      const age = pcr.ageSec == null ? '' : ` · ${formatValue(pcr.ageSec, 0)}초 전`;
+      const note = showValue
+        ? `거래량 풋 ${putVol} / 콜 ${callVol} · 거래대금 PCR ${amount} · 미결제 PCR ${oi}`
+        : (pcr.message || 'PCR 데이터 수집 오류');
+      const sourceLabel = pcr.status === 'observing' ? `KIS active universe 관찰값${contracts}${age}` : `KIS 옵션전광판 기준`;
+      return `<section class="volumePanel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 풋콜 레시오</h2><div class="volumeSub">${escapeHtml(sourceLabel)} · 최근월물 ${escapeHtml(pcr.expiryMonth || '확인 중')} · 공식 KRX PCR과 교차확인 권장</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid"><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(state.label || pcr.status)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(main)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(x100)}<br>${escapeHtml(note)}</div></div><div><div class="volumePct">${escapeHtml(ma3)}</div><div class="meta">3일 평균</div></div></div><div class="note info">${escapeHtml(state.guidance || '')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article></div></section>`;
+    }
+
+    function formatRatio(value) {
+      if (value == null || Number.isNaN(Number(value))) return '—';
+      return new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value));
     }
 
     function volumeCard(item, checkpoints) {

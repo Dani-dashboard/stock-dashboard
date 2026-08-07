@@ -385,3 +385,41 @@ Use these files when improving `오늘의 이슈`, 30-minute summaries, or any m
 ## Update 2026-05-13 — Morning Today Issues Logic
 
 Dani's morning-priority feedback has been implemented in `scripts/fetch-all.mjs`: USD/KRW >=1%, gold/BTC relationship, US10Y high, Nasdaq100 vs S&P500 larger mover, SOX/EWY/DRAM US-close lead, SOX intraday recovery shape, and KOSPI200 night futures moves now feed `오늘의 이슈`. Issue state keys include the KST data date where available so daily close signals reset with each day's first updated number. Last gate: `npm run check` and `npm run fetch` passed at 2026-05-13 morning KST.
+
+## 2026-08-07 PCR full-chain probe update
+
+- Added `scripts/kis-kospi200-pcr-probe.mjs` and package script `npm run kis:pcr:probe`.
+- Purpose: validate KIS full-chain KOSPI200 options PCR outside the 1-minute dashboard loop.
+- Correct master file for KOSPI200 index options is `fo_idx_code_mts.mst.zip`, not `fo_stk_code_mts.mst.zip`.
+- Initial universe filter:
+  - calls: `productKind=5`, `underlyingCode=2001`, `underlyingName=KOSPI200`
+  - puts: `productKind=6`, `underlyingCode=2001`, `underlyingName=KOSPI200`
+  - excludes mini/weekly/KOSDAQ150/single-stock options.
+- Current KIS master universe size: 2,612 calls + 2,612 puts = 5,224 contracts; ATM calls/puts 11 each.
+- Production KIS `inquire-price` validation succeeded with master short codes and returned `acml_vol`, amount, OI, IV/Greeks for sample contracts.
+- Sample command verified: `KIS_MODE=prod npm run kis:pcr:probe -- --limit-per-side 2 --delay-ms 2200`.
+- Do not promote sample PCR to dashboard signal. Full-chain sweep is too heavy without active-universe reduction; next step is to design a reliable active-contract filter and/or expiry/strike selection policy, then reconcile against KRX OpenAPI EOD `opt_bydd_trd` when Dani provides an AUTH_KEY.
+
+## 2026-08-07 PCR active-universe probe update
+
+- `scripts/kis-kospi200-pcr-probe.mjs` now supports `--active` mode.
+- Current active policy: front expiry month(s), ATM-centered strike window from KIS `fo_idx_code_mts.mst`.
+- Useful CLI knobs:
+  - `--active`
+  - `--expiry-count 1`
+  - `--strikes-around 5`
+  - `--delay-ms 1600`
+- Verified run: `KIS_MODE=prod npm run kis:pcr:probe -- --active --expiry-count 1 --strikes-around 5 --delay-ms 1600`
+  - selected expiry `202608`, ATM strike `982.5`
+  - selected 11 calls + 11 puts = 22 contracts
+  - 22/22 ok, elapsed 34.166s
+  - call volume 495, put volume 498, active candidate PCR 1.006
+- This gives a realistic near-real-time candidate path, but still do not promote to production signal until KRX EOD reconciliation and multi-day calibration are done.
+
+## 2026-08-07 KRX EOD PCR reconciliation scaffold
+
+- Added `scripts/krx-kospi200-pcr-reconcile.mjs` and package script `npm run krx:pcr:eod`.
+- Uses KRX OpenAPI endpoint scaffold: `https://data-dbg.krx.co.kr/svc/apis/drv/opt_bydd_trd?basDd=YYYYMMDD`.
+- Auth env expected: `KRX_OPENAPI_AUTH_KEY` (fallbacks: `KRX_AUTH_KEY`, `KRX_DATA_AUTH_KEY`).
+- Current state without key: script writes `data/kospi200-pcr-krx-eod.json` with `status=blocked_missing_auth_key` and exits 0.
+- Once Dani provides KRX OpenAPI AUTH_KEY, run `npm run krx:pcr:eod -- --basDd YYYYMMDD` and inspect field mapping/sample rows before trusting reconciliation.
