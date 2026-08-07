@@ -72,8 +72,8 @@
     .priorityCard .pname { font-size:12px; color:#bae6fd; padding-right:14px; }
     .priorityCard .pvalue { font-size:23px; font-weight:850; letter-spacing:-.04em; }
     .priorityCard .pchange { font-size:12px; color:var(--muted); text-align:right; }
-    .priorityCard.optionStatus .pvalue { font-size:15px; font-weight:700; line-height:1.32; letter-spacing:-.03em; }
-    .priorityCard.optionStatus .pchange { font-size:11px; line-height:1.35; text-align:left; }
+    .priorityCard.optionStatus .pvalue { font-size:12.5px; font-weight:600; line-height:1.38; letter-spacing:-.02em; }
+    .priorityCard.optionStatus .pchange { font-size:10.2px; line-height:1.35; text-align:left; }
     .volumePanel { border:1px solid rgba(34,197,94,.22); background:rgba(20,83,45,.15); border-radius:18px; padding:14px; margin:0 0 18px; overflow:hidden; min-width:0; }
     .volumeHead { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; min-width:0; }
     .volumeHead > div { min-width:0; }
@@ -452,7 +452,7 @@
       const view = classifyOptionPositionView(pcr, metrics);
       const vol = pcr.volumePcr == null ? '—' : formatRatio(pcr.volumePcr);
       const oi = pcr.openInterestPcr == null ? '—' : formatRatio(pcr.openInterestPcr);
-      return `<a class="priorityCard optionStatus" href="#pcr-panel" onclick="jumpToElement('pcr-panel', event)" aria-label="KOSPI200 옵션 상태"><div class="pname">KOSPI200 옵션</div><div class="pvalue">${escapeHtml(view.summary)}</div><div class="pchange ${escapeAttr(view.cls)}">거래량 PCR ${escapeHtml(vol)} · 포지션 PCR ${escapeHtml(oi)}<br>${escapeHtml(view.detail)}</div></a>`;
+      return `<a class="priorityCard optionStatus" href="#pcr-panel" onclick="jumpToElement('pcr-panel', event)" aria-label="KOSPI200 옵션 해석"><div class="pname">KOSPI200 옵션</div><div class="pvalue">${escapeHtml(view.interpretation)}</div><div class="pchange ${escapeAttr(view.cls)}">거래량 ${escapeHtml(vol)} · 포지션 ${escapeHtml(oi)}<br>${escapeHtml(view.context)}</div></a>`;
     }
 
     function classifyOptionPositionView(pcr, metrics) {
@@ -461,34 +461,34 @@
       const kospi200 = metrics.find(m => m.id === 'kospi200') || metrics.find(m => m.id === 'kospi200_futures_kis');
       const priceChangePct = Number(kospi200?.changePct);
       const volumeBand = classifyPcrBand(volume);
-      const oiState = Number.isFinite(oi) ? classifyPcrBand(oi) : { label: 'OI 확인중', cls: '' };
+      const oiBand = Number.isFinite(oi) ? classifyPcrBand(oi) : { phrase: '남아 있는 포지션은 아직 확인 중', cls: '' };
       const pricePhrase = Number.isFinite(priceChangePct)
         ? priceChangePct > 0.15 ? '지수는 오르는 중'
           : priceChangePct < -0.15 ? '지수는 밀리는 중'
           : '지수는 큰 방향 없이 움직이는 중'
         : '지수 방향은 확인 중';
-      let summary = `거래량은 ${volumeBand.natural}, 포지션은 ${oiState.natural}`;
-      let detail = pricePhrase;
+      let interpretation = `${volumeBand.phrase}, ${oiBand.phrase}`;
+      let context = pricePhrase;
       let cls = volumeBand.cls;
       if (Number.isFinite(oi) && oi >= 1.5) cls = 'neg';
       if (Number.isFinite(volume) && Number.isFinite(priceChangePct)) {
-        if (priceChangePct > 0.15 && volume < 0.85) { summary = '상승 흐름을 옵션 거래도 따라가는 모습'; cls = 'pos'; }
-        else if (priceChangePct < -0.15 && volume > 1.15) { summary = '하락 흐름에 풋 거래가 같이 늘어나는 모습'; cls = 'neg'; }
-        else if (priceChangePct > 0.15 && volume > 1.15) { summary = '오르는 중에도 헤지가 늘어나는 모습'; cls = 'neg'; }
-        else if (priceChangePct < -0.15 && volume < 0.85) { summary = '하락 중 풋 압력이 약해지는 모습'; cls = 'pos'; }
+        if (priceChangePct > 0.15 && volume < 0.85) { interpretation = '지수 상승을 옵션 거래도 따라가지만, 과열 여부는 같이 봐야 함'; cls = 'pos'; }
+        else if (priceChangePct < -0.15 && volume > 1.15) { interpretation = '지수 하락과 함께 풋 거래가 늘어 하방 경계가 커지는 중'; cls = 'neg'; }
+        else if (priceChangePct > 0.15 && volume > 1.15) { interpretation = '지수는 오르지만 옵션 쪽에서는 헤지가 같이 늘어나는 중'; cls = 'neg'; }
+        else if (priceChangePct < -0.15 && volume < 0.85) { interpretation = '지수는 밀리지만 풋 거래 압력은 약해지는 모습'; cls = 'pos'; }
       }
-      if (Number.isFinite(oi)) detail += ` · 남아 있는 포지션은 ${oiState.natural}`;
-      return { summary, detail, cls };
+      if (Number.isFinite(oi)) context += ` · ${oiBand.phrase}`;
+      return { interpretation, context, cls };
     }
 
     function classifyPcrBand(value) {
-      if (!Number.isFinite(value)) return { label: 'PCR 확인중', natural: '확인 중', cls: '' };
-      if (value < 0.6) return { label: '콜 과열 경계', natural: '콜 쪽으로 과하게 기운 상태', cls: 'pos' };
-      if (value < 0.85) return { label: '콜 우세', natural: '콜 쪽으로 기운 상태', cls: 'pos' };
-      if (value <= 1.15) return { label: '중립', natural: '중립권', cls: '' };
-      if (value <= 1.5) return { label: '풋 우세', natural: '풋 쪽으로 기운 상태', cls: 'neg' };
-      if (value <= 2.0) return { label: '강한 위험회피', natural: '풋 포지션이 강한 상태', cls: 'neg' };
-      return { label: '공포 극단', natural: '풋 쏠림이 극단적인 상태', cls: 'neg' };
+      if (!Number.isFinite(value)) return { phrase: '옵션 수급은 아직 해석 대기', cls: '' };
+      if (value < 0.6) return { phrase: '콜 거래가 과하게 몰려 낙관 과열을 경계할 구간', cls: 'pos' };
+      if (value < 0.85) return { phrase: '콜 거래가 더 활발해 상방 심리가 우세한 편', cls: 'pos' };
+      if (value <= 1.15) return { phrase: '거래량은 한쪽으로 크게 쏠리지 않은 상태', cls: '' };
+      if (value <= 1.5) return { phrase: '풋 거래가 늘어 하방 헤지가 커진 상태', cls: 'neg' };
+      if (value <= 2.0) return { phrase: '풋 쪽 포지션이 강해 위험회피가 뚜렷한 상태', cls: 'neg' };
+      return { phrase: '풋 쏠림이 극단적이라 공포와 반전 가능성을 함께 봐야 하는 구간', cls: 'neg' };
     }
     function groupPill(g) { return `<div class="groupPill"><strong>${escapeHtml(g.label || g.key)}</strong><span>정상 ${g.ok || 0} · 확인 ${g.warn || 0} · 종료 ${g.closed || 0} · 오류 ${g.error || 0}</span></div>`; }
     function groupSection(g, items) { return `<details class="groupBlock" open><summary><div><h2 class="groupTitle">${escapeHtml(g.label || g.key)}</h2><div class="groupDesc">${escapeHtml(g.description || '')}</div></div><div class="groupCounts">${items.length}개</div></summary><section class="grid">${items.map(card).join('')}</section></details>`; }
