@@ -451,14 +451,6 @@
       return metricCards;
     }
 
-    function optionPositionPriorityCard(pcr, metrics) {
-      if (!pcr || !['ok', 'observing'].includes(pcr.status)) return '';
-      const view = classifyOptionPositionView(pcr, metrics);
-      const vol = pcr.volumePcr == null ? '—' : formatRatio(pcr.volumePcr);
-      const oi = pcr.openInterestPcr == null ? '—' : formatRatio(pcr.openInterestPcr);
-      return `<a class="priorityCard optionStatus" href="#pcr-panel" onclick="jumpToElement('pcr-panel', event)" aria-label="KOSPI200 옵션 해석"><div class="pname">KOSPI200 옵션</div><div class="pvalue">${escapeHtml(view.interpretation)}</div><div class="pchange ${escapeAttr(view.cls)}">거래량 ${escapeHtml(vol)} · 포지션 ${escapeHtml(oi)}<br>${escapeHtml(view.context)}</div></a>`;
-    }
-
     function classifyOptionPositionView(pcr, metrics) {
       const volume = Number(pcr?.volumePcr);
       const oi = Number(pcr?.openInterestPcr);
