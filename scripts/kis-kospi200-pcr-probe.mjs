@@ -15,6 +15,7 @@ const MASTER_DIR = path.join(root, 'data/kis-master');
 const MASTER_ZIP = path.join(MASTER_DIR, 'fo_idx_code_mts.mst.zip');
 const MASTER_FILE = path.join(MASTER_DIR, 'fo_idx_code_mts.mst');
 const OUTPUT_FILE = path.join(root, 'data/kospi200-pcr-fullchain-probe.json');
+const ERROR_FILE = path.join(root, 'data/kospi200-pcr-last-error.json');
 const KST = 'Asia/Seoul';
 
 const args = parseArgs(process.argv.slice(2));
@@ -106,9 +107,15 @@ const payload = {
   }
 };
 
+const shouldWriteOutput = writeOutput && (payload.usableForSignal || payload.mode === 'sample');
 if (writeOutput) {
   await fs.mkdir(path.dirname(OUTPUT_FILE), { recursive: true });
-  await fs.writeFile(OUTPUT_FILE, `${JSON.stringify(payload, null, 2)}\n`);
+  if (shouldWriteOutput) {
+    await fs.writeFile(OUTPUT_FILE, `${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    await fs.writeFile(ERROR_FILE, `${JSON.stringify(payload, null, 2)}\n`);
+    process.exitCode = 2;
+  }
 }
 
 console.log(JSON.stringify({
@@ -121,7 +128,8 @@ console.log(JSON.stringify({
   volumePcr: payload.volumePcr,
   call: payload.call,
   put: payload.put,
-  outputFile: writeOutput ? path.relative(root, OUTPUT_FILE) : null
+  outputFile: shouldWriteOutput ? path.relative(root, OUTPUT_FILE) : null,
+  errorFile: writeOutput && !shouldWriteOutput ? path.relative(root, ERROR_FILE) : null
 }, null, 2));
 
 async function ensureIndexFutureOptionMaster() {

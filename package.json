@@ -24,7 +24,8 @@
     "kis:ngt:ws-smoke": "node scripts/kis-ngt-ws-smoke.mjs",
     "kis:ngt:collector": "node scripts/kis-ngt-collector.mjs",
     "calendar:freshness": "node scripts/check-weekly-calendar-freshness.mjs",
-    "structural:freshness": "node scripts/check-structural-event-freshness.mjs"
+    "structural:freshness": "node scripts/check-structural-event-freshness.mjs",
+    "pcr:refresh": "scripts/refresh-active-pcr.sh"
   },
   "engines": {
     "node": ">=20"
