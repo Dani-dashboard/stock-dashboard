@@ -234,10 +234,11 @@
     function putCallRatioPanel(pcr) {
       if (!pcr) return '';
       const state = pcr.labelState || { label: pcr.status || '확인', guidance: pcr.message || '' };
-      const showValue = ['ok', 'observing'].includes(pcr.status) && pcr.volumePcr != null;
+      const hasVolumeValue = pcr.volumePcr != null && Number.isFinite(Number(pcr.volumePcr));
+      const isSignalReady = ['ok', 'observing'].includes(pcr.status);
       const status = pcr.status === 'ok' ? state.key || 'ok' : 'warn';
-      const volumeMain = showValue ? formatRatio(pcr.volumePcr) : '—';
-      const volumeX100 = showValue ? formatValue(pcr.volumePcrX100, 0) : '—';
+      const volumeMain = hasVolumeValue ? formatRatio(pcr.volumePcr) : '—';
+      const volumeX100 = pcr.volumePcrX100 == null ? '—' : formatValue(pcr.volumePcrX100, 0);
       const oiMain = pcr.openInterestPcr == null ? '—' : formatRatio(pcr.openInterestPcr);
       const oiX100 = pcr.openInterestPcrX100 == null ? '—' : formatValue(pcr.openInterestPcrX100, 0);
       const ma3 = pcr.ma3 == null ? '축적 중' : formatRatio(pcr.ma3);
@@ -251,11 +252,11 @@
       const age = pcr.ageSec == null ? '' : ` · ${formatValue(pcr.ageSec, 0)}초 전`;
       const sourceLabel = pcr.status === 'observing' ? `KIS active universe 관찰값${contracts}${age}` : `KIS 옵션전광판 기준`;
       const optionView = classifyOptionPositionView(pcr, window.__latestMetrics || []);
-      const interpretationBox = ['ok', 'observing'].includes(pcr.status)
+      const interpretationBox = isSignalReady
         ? `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 해석</div><div class="meta">KOSPI200 움직임 + 거래량 PCR + 포지션 PCR 조합</div></div><span class="volumeBadge warn">관찰</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">${escapeHtml(optionView.interpretation)}<br><span class="meta">${escapeHtml(optionView.context)}</span></div></article>`
-        : '';
-      const volumeNote = showValue
-        ? `당일 누적거래량: 풋 ${putVol} / 콜 ${callVol} · 거래대금 PCR ${amount}`
+        : `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 해석</div><div class="meta">검증 전 표시값</div></div><span class="volumeBadge warn">검증중</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">현재 KIS 반환 범위 제한 때문에 신호 해석은 보류합니다.<br><span class="meta">값 자체는 숨기지 않고 참고용으로 표시합니다.</span></div></article>`;
+      const volumeNote = hasVolumeValue
+        ? `당일 누적거래량: 풋 ${putVol} / 콜 ${callVol} · 거래대금 PCR ${amount}${isSignalReady ? '' : ' · 검증 전 참고값'}`
         : (pcr.message || 'PCR 데이터 수집 오류');
       const oiNote = pcr.openInterestPcr == null
         ? '미결제약정 산출 대기'
@@ -443,12 +444,28 @@
     function priorityCards(data) {
       const metrics = Array.isArray(data?.metrics) ? data.metrics : [];
       const ids = ['usdkrw','dxy','nasdaq_f','spx_f','kospi','kospi200','kosdaq','btc','ewy','kospi200_futures_kis','kospi200_night_futures_kis'];
+      const optionCard = optionPositionPriorityCard(data?.putCallRatio, metrics);
       const metricCards = ids.map(id => metrics.find(m => m.id === id)).filter(Boolean).map(m => {
         const pct = m.changePct == null ? '—' : pctFmt.format(m.changePct) + '%';
         const cls = m.changePct > 0 ? 'pos' : m.changePct < 0 ? 'neg' : '';
         return `<a class="priorityCard" href="#metric-${escapeAttr(m.id)}" onclick="jumpToMetric('${escapeJsString(m.id)}', event)" aria-label="${escapeAttr(m.name)} 상세 지표로 이동"><div class="pname">${escapeHtml(m.name)}</div><div class="pvalue">${formatValue(m.value, m.decimals)} <span class="meta">${escapeHtml(m.unit || '')}</span></div><div class="pchange ${cls}">${pct}</div></a>`;
       });
-      return metricCards;
+      return optionCard ? [optionCard, ...metricCards] : metricCards;
+    }
+
+    function optionPositionPriorityCard(pcr, metrics) {
+      if (!pcr) return '';
+      const hasVolume = pcr.volumePcr != null && Number.isFinite(Number(pcr.volumePcr));
+      const hasOi = pcr.openInterestPcr != null && Number.isFinite(Number(pcr.openInterestPcr));
+      if (!hasVolume && !hasOi) return '';
+      const view = classifyOptionPositionView(pcr, metrics);
+      const vol = hasVolume ? formatRatio(pcr.volumePcr) : '—';
+      const oi = hasOi ? formatRatio(pcr.openInterestPcr) : '—';
+      const statusText = ['ok', 'observing'].includes(pcr.status)
+        ? view.interpretation
+        : `${pcr.labelState?.label || '검증중'} · 참고값`;
+      const detail = `거래량 ${vol} · 포지션 ${oi}${pcr.usableForSignal ? '' : ' · 신호보류'}`;
+      return `<a class="priorityCard optionStatus" href="#pcr-panel" onclick="jumpToElement('pcr-panel', event)" aria-label="KOSPI200 옵션 풋콜비중"><div class="pname">옵션 풋콜비중</div><div class="pvalue">${escapeHtml(statusText)}</div><div class="pchange ${escapeAttr(view.cls)}">${escapeHtml(detail)}</div></a>`;
     }
 
     function classifyOptionPositionView(pcr, metrics) {
