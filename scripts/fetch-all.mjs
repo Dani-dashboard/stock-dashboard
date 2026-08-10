@@ -548,8 +548,8 @@ async function readActivePutCallRatioProbe(generatedAt) {
       source: 'KIS 개별 옵션 inquire-price active universe cache',
       sourcePath: '/uapi/domestic-futureoption/v1/quotations/inquire-price',
       status: 'observing',
-      quality: 'OBSERVATION_ONLY',
-      message: 'KIS active universe 관찰값 · KRX 공식 EOD 검증 전이라 신호 사용 보류',
+      quality: 'DIAGNOSTIC_SAMPLE_ONLY',
+      message: 'ATM 주변 일부 계약 표본이라 대표 PCR/포지션으로 표시 보류 · 공식/HTS 누적 소스 확정 필요',
       generatedAt,
       fetchedAt: new Date().toISOString(),
       cacheGeneratedAt: probe.generatedAt || null,
@@ -644,7 +644,7 @@ function classifyPutCallRatio(value) {
 }
 
 async function buildOptionPositionChangeSignal(pcr, results, generatedAt) {
-  if (!pcr || !['ok', 'observing'].includes(pcr.status)) return null;
+  if (!pcr || pcr.usableForSignal !== true || !['ok', 'observing'].includes(pcr.status)) return null;
   const view = classifyOptionPositionForSignal(pcr, results);
   if (!view?.key || view.key === 'unknown') return null;
   const file = path.join(root, 'data/option-position-state.json');

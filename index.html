@@ -234,34 +234,33 @@
     function putCallRatioPanel(pcr) {
       if (!pcr) return '';
       const state = pcr.labelState || { label: pcr.status || '확인', guidance: pcr.message || '' };
-      const isSignalReady = ['ok', 'observing'].includes(pcr.status);
-      const hasVolumeValue = isSignalReady && pcr.volumePcr != null && Number.isFinite(Number(pcr.volumePcr));
-      const status = pcr.status === 'ok' ? state.key || 'ok' : 'warn';
-      const volumeMain = hasVolumeValue ? formatRatio(pcr.volumePcr) : '—';
-      const volumeX100 = hasVolumeValue && pcr.volumePcrX100 != null ? formatValue(pcr.volumePcrX100, 0) : '—';
-      const oiMain = pcr.openInterestPcr == null ? '—' : formatRatio(pcr.openInterestPcr);
-      const oiX100 = pcr.openInterestPcrX100 == null ? '—' : formatValue(pcr.openInterestPcrX100, 0);
-      const ma3 = pcr.ma3 == null ? '축적 중' : formatRatio(pcr.ma3);
-      const ma5 = pcr.ma5 == null ? '축적 중' : formatRatio(pcr.ma5);
-      const amount = pcr.amountPcr == null ? '—' : formatRatio(pcr.amountPcr);
-      const callVol = pcr.call?.volume == null ? '—' : formatInteger(pcr.call.volume);
-      const putVol = pcr.put?.volume == null ? '—' : formatInteger(pcr.put.volume);
-      const callOi = pcr.call?.openInterest == null ? '—' : formatInteger(pcr.call.openInterest);
-      const putOi = pcr.put?.openInterest == null ? '—' : formatInteger(pcr.put.openInterest);
-      const contracts = pcr.coverage?.contractsRequested ? ` · ${formatInteger(pcr.coverage.contractsOk)}/${formatInteger(pcr.coverage.contractsRequested)}계약` : '';
+      const canUseValues = pcr.usableForSignal === true && ['ok', 'observing'].includes(pcr.status);
+      const status = canUseValues && pcr.status === 'ok' ? state.key || 'ok' : 'warn';
+      const volumeMain = canUseValues && pcr.volumePcr != null ? formatRatio(pcr.volumePcr) : '—';
+      const volumeX100 = canUseValues && pcr.volumePcrX100 != null ? formatValue(pcr.volumePcrX100, 0) : '—';
+      const oiMain = canUseValues && pcr.openInterestPcr != null ? formatRatio(pcr.openInterestPcr) : '—';
+      const oiX100 = canUseValues && pcr.openInterestPcrX100 != null ? formatValue(pcr.openInterestPcrX100, 0) : '—';
+      const ma3 = canUseValues && pcr.ma3 != null ? formatRatio(pcr.ma3) : '—';
+      const ma5 = canUseValues && pcr.ma5 != null ? formatRatio(pcr.ma5) : '—';
+      const amount = canUseValues && pcr.amountPcr != null ? formatRatio(pcr.amountPcr) : '—';
+      const callVol = canUseValues && pcr.call?.volume != null ? formatInteger(pcr.call.volume) : '—';
+      const putVol = canUseValues && pcr.put?.volume != null ? formatInteger(pcr.put.volume) : '—';
+      const callOi = canUseValues && pcr.call?.openInterest != null ? formatInteger(pcr.call.openInterest) : '—';
+      const putOi = canUseValues && pcr.put?.openInterest != null ? formatInteger(pcr.put.openInterest) : '—';
+      const contracts = pcr.coverage?.contractsRequested ? ` · 진단표본 ${formatInteger(pcr.coverage.contractsOk)}/${formatInteger(pcr.coverage.contractsRequested)}계약` : '';
       const age = pcr.ageSec == null ? '' : ` · ${formatValue(pcr.ageSec, 0)}초 전`;
-      const sourceLabel = pcr.status === 'observing' ? `KIS active universe 관찰값${contracts}${age}` : `KIS 옵션전광판 기준`;
-      const optionView = classifyOptionPositionView(pcr, window.__latestMetrics || []);
-      const interpretationBox = isSignalReady
-        ? `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 해석</div><div class="meta">KOSPI200 움직임 + 거래량 PCR + 포지션 PCR 조합</div></div><span class="volumeBadge warn">관찰</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">${escapeHtml(optionView.interpretation)}<br><span class="meta">${escapeHtml(optionView.context)}</span></div></article>`
-        : '';
-      const volumeNote = hasVolumeValue
+      const sourceLabel = canUseValues ? `검증된 풋콜 데이터${age}` : `대표 누적 소스 확정 전 표시 보류${contracts}`;
+      const holdMessage = pcr.message || '현재 값은 ATM 주변 일부 옵션 표본 또는 제한된 전광판 응답이라 전체 시장 풋콜 레시오로 쓰지 않습니다.';
+      const interpretationBox = canUseValues
+        ? `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 해석</div><div class="meta">KOSPI200 움직임 + 거래량 PCR + 포지션 PCR 조합</div></div><span class="volumeBadge warn">관찰</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">${escapeHtml(classifyOptionPositionView(pcr, window.__latestMetrics || []).interpretation)}</div></article>`
+        : `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">표시 보류</div><div class="meta">대표 누적값 소스 미확정</div></div><span class="volumeBadge warn">소스확인</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">${escapeHtml(holdMessage)}<br><span class="meta">HTS/KRX/KIS에서 전체 콜·풋 누적 거래량과 미결제약정을 확인할 수 있는 소스를 붙인 뒤 표시합니다.</span></div></article>`;
+      const volumeNote = canUseValues
         ? `당일 누적거래량: 풋 ${putVol} / 콜 ${callVol} · 거래대금 PCR ${amount}`
-        : (pcr.message || 'PCR 데이터 수집 오류');
-      const oiNote = pcr.openInterestPcr == null
-        ? '미결제약정 산출 대기'
-        : `현재 미결제약정: 풋 ${putOi} / 콜 ${callOi} · 현재 포지션 기울기`;
-      return `<section class="volumePanel" id="pcr-panel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 풋콜 레시오</h2><div class="volumeSub">${escapeHtml(sourceLabel)} · 최근월물 ${escapeHtml(pcr.expiryMonth || '확인 중')} · 공식 KRX PCR과 교차확인 권장</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid">${interpretationBox}<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">오늘 누적 풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(state.label || pcr.status)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(volumeMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(volumeX100)}<br>${escapeHtml(volumeNote)}</div></div><div><div class="volumePct">${escapeHtml(ma3)}</div><div class="meta">3일 평균</div></div></div><div class="note info">${escapeHtml(state.guidance || '')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 포지션 PCR</div><div class="meta">미결제약정 풋 ÷ 콜</div></div><span class="volumeBadge warn">관찰</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(oiMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(oiX100)}<br>${escapeHtml(oiNote)}</div></div><div><div class="volumePct">${escapeHtml(formatRatio(pcr.amountPcr))}</div><div class="meta">거래대금 PCR</div></div></div><div class="note info">OI PCR은 현재 남아 있는 포지션의 풋/콜 기울기다. 방향성 자체보다 거래량 PCR과 같이 봐야 함.</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">CALL OI</div><div class="volumeTickValue">${escapeHtml(callOi)}</div></div><div class="volumeTick"><div class="volumeTickTime">PUT OI</div><div class="volumeTickValue">${escapeHtml(putOi)}</div></div></div></article></div></section>`;
+        : '전체 콜·풋 누적 거래량 소스 확정 전까지 숨김';
+      const oiNote = canUseValues
+        ? `현재 미결제약정: 풋 ${putOi} / 콜 ${callOi} · 현재 포지션 기울기`
+        : '전체 콜·풋 미결제약정 소스 확정 전까지 숨김';
+      return `<section class="volumePanel" id="pcr-panel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 풋콜 레시오</h2><div class="volumeSub">${escapeHtml(sourceLabel)} · 최근월물 ${escapeHtml(pcr.expiryMonth || '확인 중')}</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid">${interpretationBox}<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">전체 누적 풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(canUseValues ? (state.label || pcr.status) : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(volumeMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(volumeX100)}<br>${escapeHtml(volumeNote)}</div></div><div><div class="volumePct">${escapeHtml(ma3)}</div><div class="meta">3일 평균</div></div></div><div class="note info">${escapeHtml(canUseValues ? (state.guidance || '') : 'ATM 주변 표본값은 진단용으로만 저장하고 대표 PCR로 표시하지 않음')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 포지션 PCR</div><div class="meta">전체 미결제약정 풋 ÷ 콜</div></div><span class="volumeBadge warn">${escapeHtml(canUseValues ? '관찰' : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(oiMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(oiX100)}<br>${escapeHtml(oiNote)}</div></div><div><div class="volumePct">${escapeHtml(amount)}</div><div class="meta">거래대금 PCR</div></div></div><div class="note info">대표 누적 포지션 소스를 붙이기 전까지 숫자를 보여주지 않습니다.</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">CALL OI</div><div class="volumeTickValue">${escapeHtml(callOi)}</div></div><div class="volumeTick"><div class="volumeTickTime">PUT OI</div><div class="volumeTickValue">${escapeHtml(putOi)}</div></div></div></article></div></section>`;
     }
 
     function formatRatio(value) {
