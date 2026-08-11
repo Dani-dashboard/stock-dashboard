@@ -13,6 +13,7 @@ const basDd = String(args.basDd || args.date || formatKstDateCompact(new Date())
 const authKey = process.env.KRX_OPENAPI_AUTH_KEY || process.env.KRX_AUTH_KEY || process.env.KRX_DATA_AUTH_KEY || '';
 const timeoutMs = Number(args['timeout-ms'] || 15000);
 const writeOutput = args.write !== false;
+const writeOkOnly = args['write-ok-only'] === true;
 
 if (!authKey) {
   const payload = {
@@ -79,7 +80,8 @@ try {
     rawKeysSample: rows[0] ? Object.keys(rows[0]).slice(0, 80) : [],
     sampleRows: classified.slice(0, 10)
   };
-  if (writeOutput) await writeJson(OUTPUT_FILE, payload);
+  const shouldWrite = writeOutput && (!writeOkOnly || payload.status === 'ok');
+  if (shouldWrite) await writeJson(OUTPUT_FILE, payload);
   console.log(JSON.stringify({
     status: payload.status,
     basDd,
@@ -87,7 +89,8 @@ try {
     volumePcr: payload.volumePcr,
     call: payload.call,
     put: payload.put,
-    outputFile: writeOutput ? path.relative(root, OUTPUT_FILE) : null
+    outputFile: shouldWrite ? path.relative(root, OUTPUT_FILE) : null,
+    skippedWrite: writeOutput && !shouldWrite ? 'write-ok-only' : false
   }, null, 2));
 } catch (err) {
   const payload = {
@@ -147,10 +150,18 @@ function normalizeKrxOptionRow(raw) {
 }
 
 function inferSide(raw, compactText) {
+  const explicitRightType = String(raw.RGHT_TP_NM || raw.rghtTpNm || raw.RGHT_TP_CD || raw.rghtTpCd || '').trim().toUpperCase();
+  if (/^(CALL|콜|C)$/.test(explicitRightType)) return 'CALL';
+  if (/^(PUT|풋|P)$/.test(explicitRightType)) return 'PUT';
+
+  const issueName = String(raw.ISU_NM || raw.isuNm || raw.ISU_ABBRV || raw.isuAbrv || '').trim().toUpperCase();
+  if (/(^|\s)(CALL|콜|C)(\s|$)|지수콜|콜옵션/.test(issueName)) return 'CALL';
+  if (/(^|\s)(PUT|풋|P)(\s|$)|지수풋|풋옵션/.test(issueName)) return 'PUT';
+
   const values = Object.values(raw).map(v => String(v ?? '').trim().toUpperCase());
   const joined = `${compactText} ${values.join(' ')}`;
-  if (/(^|\s)(CALL|콜|C)(\s|$)|지수콜|콜옵션|\bC\d/.test(joined)) return 'CALL';
-  if (/(^|\s)(PUT|풋|P)(\s|$)|지수풋|풋옵션|\bP\d/.test(joined)) return 'PUT';
+  if (/(^|\s)(CALL|콜)(\s|$)|지수콜|콜옵션/.test(joined)) return 'CALL';
+  if (/(^|\s)(PUT|풋)(\s|$)|지수풋|풋옵션/.test(joined)) return 'PUT';
   return null;
 }
 
@@ -194,6 +205,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--no-write') out.write = false;
+    else if (arg === '--write-ok-only') out['write-ok-only'] = true;
     else if (arg.startsWith('--')) {
       const key = arg.slice(2);
       const next = argv[i + 1];

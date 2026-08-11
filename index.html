@@ -236,10 +236,13 @@
       const state = pcr.labelState || { label: pcr.status || '확인', guidance: pcr.message || '' };
       const canUseValues = pcr.usableForSignal === true && ['ok', 'observing'].includes(pcr.status);
       const status = canUseValues && pcr.status === 'ok' ? state.key || 'ok' : 'warn';
+      const cmp = pcr.comparison || {};
+      const expiry = pcr.expiryContext || {};
+      const view = canUseValues ? classifyOptionPositionView(pcr, window.__latestMetrics || []) : null;
       const volumeMain = canUseValues && pcr.volumePcr != null ? formatRatio(pcr.volumePcr) : '—';
-      const volumeX100 = canUseValues && pcr.volumePcrX100 != null ? formatValue(pcr.volumePcrX100, 0) : '—';
+      const volumeX100 = canUseValues && pcr.volumePcrX100 != null ? formatValue(pcr.volumePcrX100, 1) : '—';
       const oiMain = canUseValues && pcr.openInterestPcr != null ? formatRatio(pcr.openInterestPcr) : '—';
-      const oiX100 = canUseValues && pcr.openInterestPcrX100 != null ? formatValue(pcr.openInterestPcrX100, 0) : '—';
+      const oiX100 = canUseValues && pcr.openInterestPcrX100 != null ? formatValue(pcr.openInterestPcrX100, 1) : '—';
       const ma3 = canUseValues && pcr.ma3 != null ? formatRatio(pcr.ma3) : '—';
       const ma5 = canUseValues && pcr.ma5 != null ? formatRatio(pcr.ma5) : '—';
       const amount = canUseValues && pcr.amountPcr != null ? formatRatio(pcr.amountPcr) : '—';
@@ -248,24 +251,44 @@
       const callOi = canUseValues && pcr.call?.openInterest != null ? formatInteger(pcr.call.openInterest) : '—';
       const putOi = canUseValues && pcr.put?.openInterest != null ? formatInteger(pcr.put.openInterest) : '—';
       const contracts = pcr.coverage?.contractsRequested ? ` · 진단표본 ${formatInteger(pcr.coverage.contractsOk)}/${formatInteger(pcr.coverage.contractsRequested)}계약` : '';
-      const age = pcr.ageSec == null ? '' : ` · ${formatValue(pcr.ageSec, 0)}초 전`;
-      const sourceLabel = canUseValues ? `검증된 풋콜 데이터${age}` : `대표 누적 소스 확정 전 표시 보류${contracts}`;
+      const eodMeta = canUseValues ? `${pcr.tradeDate || '기준일 확인'} · ${expiry.label || '만기 확인 중'}${expiry.isQuarterlyExpiry ? ' · 동시만기월' : ''}` : `대표 누적 소스 확정 전 표시 보류${contracts}`;
       const holdMessage = pcr.message || '현재 값은 ATM 주변 일부 옵션 표본 또는 제한된 전광판 응답이라 전체 시장 풋콜 레시오로 쓰지 않습니다.';
+      const volumeDelta = formatSignedPoint(cmp.volumePcrDeltaX100, 1);
+      const oiDelta = formatSignedPoint(cmp.openInterestPcrDeltaX100, 1);
+      const volumeVsAvg = formatSignedPct(cmp.volumePcrVsAvg5Pct, 1);
+      const oiVsAvg = formatSignedPct(cmp.openInterestPcrVsAvg5Pct, 1);
       const interpretationBox = canUseValues
-        ? `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 해석</div><div class="meta">KOSPI200 움직임 + 거래량 PCR + 포지션 PCR 조합</div></div><span class="volumeBadge warn">관찰</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">${escapeHtml(classifyOptionPositionView(pcr, window.__latestMetrics || []).interpretation)}</div></article>`
+        ? `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">EOD 옵션 상태 해석</div><div class="meta">${escapeHtml(eodMeta)} · 전일비/5일평균/만기까지 같이 해석</div></div><span class="volumeBadge ${escapeAttr(view.cls || 'warn')}">${escapeHtml(view.badge || '관찰')}</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">${escapeHtml(view.interpretation)}<br><span class="meta">${escapeHtml(view.context)}</span></div></article>`
         : `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">표시 보류</div><div class="meta">대표 누적값 소스 미확정</div></div><span class="volumeBadge warn">소스확인</span></div><div class="volumeSub" style="font-size:12.2px;line-height:1.48;color:#e5e7eb;">${escapeHtml(holdMessage)}<br><span class="meta">HTS/KRX/KIS에서 전체 콜·풋 누적 거래량과 미결제약정을 확인할 수 있는 소스를 붙인 뒤 표시합니다.</span></div></article>`;
       const volumeNote = canUseValues
-        ? `당일 누적거래량: 풋 ${putVol} / 콜 ${callVol} · 거래대금 PCR ${amount}`
+        ? `풋 ${putVol} / 콜 ${callVol} · 전일비 ${volumeDelta}p · 5일평균 대비 ${volumeVsAvg}`
         : '전체 콜·풋 누적 거래량 소스 확정 전까지 숨김';
       const oiNote = canUseValues
-        ? `현재 미결제약정: 풋 ${putOi} / 콜 ${callOi} · 현재 포지션 기울기`
+        ? `풋 ${putOi} / 콜 ${callOi} · 전일비 ${oiDelta}p · 5일평균 대비 ${oiVsAvg}`
         : '전체 콜·풋 미결제약정 소스 확정 전까지 숨김';
-      return `<section class="volumePanel" id="pcr-panel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 풋콜 레시오</h2><div class="volumeSub">${escapeHtml(sourceLabel)} · 최근월물 ${escapeHtml(pcr.expiryMonth || '확인 중')}</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid">${interpretationBox}<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">전체 누적 풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(canUseValues ? (state.label || pcr.status) : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(volumeMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(volumeX100)}<br>${escapeHtml(volumeNote)}</div></div><div><div class="volumePct">${escapeHtml(ma3)}</div><div class="meta">3일 평균</div></div></div><div class="note info">${escapeHtml(canUseValues ? (state.guidance || '') : 'ATM 주변 표본값은 진단용으로만 저장하고 대표 PCR로 표시하지 않음')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">현재 포지션 PCR</div><div class="meta">전체 미결제약정 풋 ÷ 콜</div></div><span class="volumeBadge warn">${escapeHtml(canUseValues ? '관찰' : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(oiMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(oiX100)}<br>${escapeHtml(oiNote)}</div></div><div><div class="volumePct">${escapeHtml(amount)}</div><div class="meta">거래대금 PCR</div></div></div><div class="note info">대표 누적 포지션 소스를 붙이기 전까지 숫자를 보여주지 않습니다.</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">CALL OI</div><div class="volumeTickValue">${escapeHtml(callOi)}</div></div><div class="volumeTick"><div class="volumeTickTime">PUT OI</div><div class="volumeTickValue">${escapeHtml(putOi)}</div></div></div></article></div></section>`;
+      const positionNote = canUseValues
+        ? `거래대금 PCR ${amount} · ${expiry.phase === 'expiry_week' ? '만기주라 전일비 급변을 더 크게 봄' : expiry.phase === 'expiry_day_window' ? '만기 임박: 청산/롤오버 영향이 큼' : '만기 전 포지션 축적 구간'}`
+        : '대표 누적 포지션 소스를 붙이기 전까지 숫자를 보여주지 않습니다.';
+      return `<section class="volumePanel" id="pcr-panel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 EOD 풋콜 상태</h2><div class="volumeSub">${escapeHtml(eodMeta)} · ${escapeHtml(pcr.quality === 'OFFICIAL_EOD' ? 'KRX 공식 일별매매정보' : '검증 중')}</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid">${interpretationBox}<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">당일 반응: 전체 누적 풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(canUseValues ? (state.label || pcr.status) : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(volumeMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(volumeX100)}<br>${escapeHtml(volumeNote)}</div></div><div><div class="volumePct">${escapeHtml(volumeDelta)}p</div><div class="meta">전일비</div></div></div><div class="note info">${escapeHtml(canUseValues ? (state.guidance || '') : 'ATM 주변 표본값은 진단용으로만 저장하고 대표 PCR로 표시하지 않음')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">포지션 PCR</div><div class="meta">잔존 포지션: 전체 미결제약정 풋 ÷ 콜</div></div><span class="volumeBadge warn">${escapeHtml(canUseValues ? 'EOD 포지션' : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(oiMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(oiX100)}<br>${escapeHtml(oiNote)}</div></div><div><div class="volumePct">${escapeHtml(oiDelta)}p</div><div class="meta">전일비</div></div></div><div class="note info">${escapeHtml(positionNote)}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">CALL OI</div><div class="volumeTickValue">${escapeHtml(callOi)}</div></div><div class="volumeTick"><div class="volumeTickTime">PUT OI</div><div class="volumeTickValue">${escapeHtml(putOi)}</div></div></div></article></div></section>`;
     }
 
     function formatRatio(value) {
       if (value == null || Number.isNaN(Number(value))) return '—';
       return new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value));
+    }
+
+    function formatSignedPoint(value, decimals = 1) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      const abs = formatValue(Math.abs(n), decimals);
+      return `${n > 0 ? '+' : n < 0 ? '-' : ''}${abs}`;
+    }
+
+    function formatSignedPct(value, decimals = 1) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      const abs = formatValue(Math.abs(n), decimals);
+      return `${n > 0 ? '+' : n < 0 ? '-' : ''}${abs}%`;
     }
 
     function volumeCard(item, checkpoints) {
@@ -453,37 +476,52 @@
     function classifyOptionPositionView(pcr, metrics) {
       const volume = Number(pcr?.volumePcr);
       const oi = Number(pcr?.openInterestPcr);
+      const cmp = pcr?.comparison || {};
+      const expiry = pcr?.expiryContext || {};
       const kospi200 = metrics.find(m => m.id === 'kospi200') || metrics.find(m => m.id === 'kospi200_futures_kis');
       const priceChangePct = Number(kospi200?.changePct);
-      const volumeBand = classifyPcrBand(volume);
-      const oiBand = Number.isFinite(oi) ? classifyPcrBand(oi) : { phrase: '남아 있는 포지션은 아직 확인 중', cls: '' };
+      const volumeBand = classifyPcrBand(volume, 'volume');
+      const oiBand = Number.isFinite(oi) ? classifyPcrBand(oi, 'oi') : { phrase: '남아 있는 포지션은 아직 확인 중', cls: '', badge: '확인' };
+      const volDelta = Number(cmp.volumePcrDeltaX100);
+      const oiDelta = Number(cmp.openInterestPcrDeltaX100);
       const pricePhrase = Number.isFinite(priceChangePct)
-        ? priceChangePct > 0.15 ? '지수는 오르는 중'
-          : priceChangePct < -0.15 ? '지수는 밀리는 중'
-          : '지수는 큰 방향 없이 움직이는 중'
-        : '지수 방향은 확인 중';
-      let interpretation = `${volumeBand.phrase}, ${oiBand.phrase}`;
-      let context = pricePhrase;
-      let cls = volumeBand.cls;
-      if (Number.isFinite(oi) && oi >= 1.5) cls = 'neg';
-      if (Number.isFinite(volume) && Number.isFinite(priceChangePct)) {
-        if (priceChangePct > 0.15 && volume < 0.85) { interpretation = '지수 상승을 옵션 거래도 따라가지만, 과열 여부는 같이 봐야 함'; cls = 'pos'; }
-        else if (priceChangePct < -0.15 && volume > 1.15) { interpretation = '지수 하락과 함께 풋 거래가 늘어 하방 경계가 커지는 중'; cls = 'neg'; }
-        else if (priceChangePct > 0.15 && volume > 1.15) { interpretation = '지수는 오르지만 옵션 쪽에서는 헤지가 같이 늘어나는 중'; cls = 'neg'; }
-        else if (priceChangePct < -0.15 && volume < 0.85) { interpretation = '지수는 밀리지만 풋 거래 압력은 약해지는 모습'; cls = 'pos'; }
+        ? priceChangePct > 0.15 ? `KOSPI200은 전일 대비 ${formatSignedPct(priceChangePct, 2)} 상승`
+          : priceChangePct < -0.15 ? `KOSPI200은 전일 대비 ${formatSignedPct(priceChangePct, 2)} 하락`
+          : `KOSPI200은 전일 대비 ${formatSignedPct(priceChangePct, 2)}로 방향성 제한`
+        : 'KOSPI200 전일 등락은 확인 중';
+      let interpretation = `${volumeBand.phrase}, ${oiBand.phrase}.`;
+      let cls = volumeBand.cls || oiBand.cls;
+      let badge = volumeBand.badge || '관찰';
+
+      if (Number.isFinite(volDelta) && Number.isFinite(oiDelta)) {
+        if (volDelta > 5 && oiDelta > 5) { interpretation = '당일 풋 거래와 장 마감 후 남은 풋 포지션이 함께 늘어 하방 헤지가 강화된 상태.'; cls = 'neg'; badge = '헤지 강화'; }
+        else if (volDelta < -5 && oiDelta < -5) { interpretation = '거래와 잔존 포지션 모두 콜 쪽으로 기울어 위험선호가 강해진 상태.'; cls = 'pos'; badge = 'Risk-on'; }
+        else if (volDelta < -5 && oiDelta > 5) { interpretation = '거래는 콜 우세로 바뀌었지만, 남은 포지션은 풋 헤지가 늘어 상승을 아직 의심하는 상태.'; cls = 'warn'; badge = '방어 유지'; }
+        else if (volDelta > 5 && oiDelta < -5) { interpretation = '당일 풋 거래는 늘었지만 장 끝에 남은 풋 포지션은 줄어 단기 방어성 거래 후 청산된 모습.'; cls = 'warn'; badge = '청산 혼재'; }
       }
-      if (Number.isFinite(oi)) context += ` · ${oiBand.phrase}`;
-      return { interpretation, context, cls };
+
+      if (Number.isFinite(priceChangePct)) {
+        if (priceChangePct > 0.15 && Number.isFinite(oiDelta) && oiDelta > 5) { interpretation += ' 지수 상승 중에도 포지션 PCR이 올라 방어 심리가 남아 있습니다.'; cls = cls === 'pos' ? 'warn' : cls; }
+        if (priceChangePct < -0.15 && Number.isFinite(oiDelta) && oiDelta > 5) { interpretation += ' 지수 하락과 풋 포지션 증가가 맞물려 위험회피 신호가 더 선명합니다.'; cls = 'neg'; badge = '위험회피'; }
+      }
+
+      const expiryPhrase = expiry.label
+        ? `${expiry.label}${expiry.isQuarterlyExpiry ? ' 동시만기월' : ''}${expiry.phase === 'expiry_week' ? ' · 만기주라 급변 민감' : expiry.phase === 'expiry_day_window' ? ' · 만기 임박' : ' · 포지션 축적 구간'}`
+        : '만기 정보 확인 중';
+      const context = `${pricePhrase} · 거래량 PCR 전일비 ${formatSignedPoint(cmp.volumePcrDeltaX100, 1)}p / 5일평균 대비 ${formatSignedPct(cmp.volumePcrVsAvg5Pct, 1)} · 포지션 PCR 전일비 ${formatSignedPoint(cmp.openInterestPcrDeltaX100, 1)}p / 5일평균 대비 ${formatSignedPct(cmp.openInterestPcrVsAvg5Pct, 1)} · ${expiryPhrase}`;
+      return { interpretation, context, cls, badge };
     }
 
-    function classifyPcrBand(value) {
-      if (!Number.isFinite(value)) return { phrase: '옵션 수급은 아직 해석 대기', cls: '' };
-      if (value < 0.6) return { phrase: '콜 거래가 과하게 몰려 낙관 과열을 경계할 구간', cls: 'pos' };
-      if (value < 0.85) return { phrase: '콜 거래가 더 활발해 상방 심리가 우세한 편', cls: 'pos' };
-      if (value <= 1.15) return { phrase: '거래량은 한쪽으로 크게 쏠리지 않은 상태', cls: '' };
-      if (value <= 1.5) return { phrase: '풋 거래가 늘어 하방 헤지가 커진 상태', cls: 'neg' };
-      if (value <= 2.0) return { phrase: '풋 쪽 포지션이 강해 위험회피가 뚜렷한 상태', cls: 'neg' };
-      return { phrase: '풋 쏠림이 극단적이라 공포와 반전 가능성을 함께 봐야 하는 구간', cls: 'neg' };
+
+    function classifyPcrBand(value, kind = 'volume') {
+      if (!Number.isFinite(value)) return { phrase: '옵션 수급은 아직 해석 대기', cls: '', badge: '확인' };
+      const subject = kind === 'oi' ? '남은 포지션' : '당일 거래';
+      if (value < 0.6) return { phrase: `${subject}은 콜 쪽으로 과하게 기울어 낙관 과열을 경계할 구간`, cls: 'pos', badge: '콜 과열' };
+      if (value < 0.85) return { phrase: `${subject}은 콜 우세로 risk-on 심리가 강한 편`, cls: 'pos', badge: '콜 우세' };
+      if (value <= 1.15) return { phrase: `${subject}은 한쪽으로 크게 쏠리지 않은 중립권`, cls: '', badge: '중립' };
+      if (value <= 1.5) return { phrase: `${subject}은 풋 우세로 하방 헤지가 커진 상태`, cls: 'neg', badge: '풋 우세' };
+      if (value <= 2.0) return { phrase: `${subject}은 풋 쪽이 강해 위험회피가 뚜렷한 상태`, cls: 'neg', badge: '위험회피' };
+      return { phrase: `${subject}은 풋 쏠림이 극단적이라 공포와 반전 가능성을 함께 봐야 하는 구간`, cls: 'neg', badge: '공포 극단' };
     }
     function groupPill(g) { return `<div class="groupPill"><strong>${escapeHtml(g.label || g.key)}</strong><span>정상 ${g.ok || 0} · 확인 ${g.warn || 0} · 종료 ${g.closed || 0} · 오류 ${g.error || 0}</span></div>`; }
     function groupSection(g, items) { return `<details class="groupBlock" open><summary><div><h2 class="groupTitle">${escapeHtml(g.label || g.key)}</h2><div class="groupDesc">${escapeHtml(g.description || '')}</div></div><div class="groupCounts">${items.length}개</div></summary><section class="grid">${items.map(card).join('')}</section></details>`; }

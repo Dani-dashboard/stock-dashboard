@@ -432,6 +432,9 @@ async function fetchInvestorFlows() {
 }
 
 async function fetchKospi200PutCallRatio(generatedAt) {
+  const krxEod = await readKrxEodPutCallRatio(generatedAt);
+  if (krxEod) return krxEod;
+
   const activeProbe = await readActivePutCallRatioProbe(generatedAt);
   if (activeProbe) return activeProbe;
 
@@ -520,6 +523,75 @@ async function fetchKospi200PutCallRatio(generatedAt) {
     };
   } catch (err) {
     return { ...base, status: 'error', message: err.name === 'AbortError' ? 'KIS PCR timeout' : err.message, fetchedAt: new Date().toISOString() };
+  }
+}
+
+async function readKrxEodPutCallRatio(generatedAt) {
+  const file = path.join(root, 'data/kospi200-pcr-krx-eod.json');
+  const maxAgeSec = Number(process.env.KRX_PCR_EOD_CACHE_MAX_AGE_SEC || 7 * 24 * 60 * 60);
+  try {
+    const payload = JSON.parse(await fs.readFile(file, 'utf8'));
+    if (payload?.status !== 'ok' || payload.usableForVerification !== true) return null;
+    const cacheTime = new Date(payload.generatedAt || 0).getTime();
+    if (!Number.isFinite(cacheTime)) return null;
+    const ageSec = Math.max(0, (new Date(generatedAt).getTime() - cacheTime) / 1000);
+    if (ageSec > maxAgeSec) return null;
+    const volumePcr = numberOrNull(payload.volumePcr);
+    const amountPcr = numberOrNull(payload.amountPcr);
+    const openInterestPcr = numberOrNull(payload.openInterestPcr);
+    const history = await updatePutCallRatioHistory({
+      date: compactKrxDateToIso(payload.basDd) || formatKstDate(new Date(generatedAt)),
+      generatedAt: payload.generatedAt || generatedAt,
+      volumePcr,
+      amountPcr,
+      openInterestPcr
+    });
+    const ma3 = movingAverage(history, 'volumePcr', 3);
+    const ma5 = movingAverage(history, 'volumePcr', 5);
+    const tradeDateIso = compactKrxDateToIso(payload.basDd) || formatKstDate(new Date(generatedAt));
+    const comparison = buildPutCallRatioComparison(history, tradeDateIso);
+    const expiryContext = buildKoreaOptionExpiryContext(tradeDateIso);
+    return {
+      id: 'kospi200_options_pcr',
+      label: 'KOSPI200 옵션 PCR',
+      market: 'KOSPI200 options',
+      basis: `KRX 공식 EOD ${compactKrxDateToIso(payload.basDd) || payload.basDd || ''}`.trim(),
+      source: payload.source || 'KRX OpenAPI options daily trading information',
+      sourcePath: payload.sourcePath || '/svc/apis/drv/opt_bydd_trd',
+      status: 'ok',
+      quality: 'OFFICIAL_EOD',
+      message: null,
+      generatedAt,
+      fetchedAt: new Date().toISOString(),
+      cacheGeneratedAt: payload.generatedAt || null,
+      ageSec,
+      tradeDate: compactKrxDateToIso(payload.basDd) || payload.basDd || null,
+      expiryMonth: '전체 만기',
+      universe: payload.universe || null,
+      call: payload.call || null,
+      put: payload.put || null,
+      volumePcr,
+      amountPcr,
+      openInterestPcr,
+      volumePcrX100: volumePcr === null ? null : volumePcr * 100,
+      amountPcrX100: amountPcr === null ? null : amountPcr * 100,
+      openInterestPcrX100: openInterestPcr === null ? null : openInterestPcr * 100,
+      ma3,
+      ma5,
+      comparison,
+      expiryContext,
+      labelState: classifyPutCallRatio(volumePcr),
+      historySampleCount: history.length,
+      usableForSignal: true,
+      limitedCoverage: false,
+      suspiciousCoverage: false,
+      warnings: [
+        'KRX OpenAPI 공식 일별매매정보 기반 EOD 값이므로 장중 실시간 PCR은 아님',
+        '당일 장중에는 직전 거래일 EOD 값으로 표시될 수 있음'
+      ]
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -631,6 +703,79 @@ function movingAverage(rows, key, count) {
   const values = rows.slice(-count).map(row => numberOrNull(row[key])).filter(v => v !== null);
   if (!values.length) return null;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+function buildPutCallRatioComparison(history, currentDate) {
+  const rows = (Array.isArray(history) ? history : [])
+    .filter(row => row?.date && row.date <= currentDate)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const current = rows.find(row => row.date === currentDate) || rows.at(-1) || null;
+  if (!current) return null;
+  const priorRows = rows.filter(row => row.date < current.date);
+  const previous = priorRows.at(-1) || null;
+  const avg5Rows = rows.slice(-5);
+  const volumeAvg5 = movingAverage(avg5Rows, 'volumePcr', 5);
+  const openInterestAvg5 = movingAverage(avg5Rows, 'openInterestPcr', 5);
+  return {
+    currentDate: current.date,
+    previousDate: previous?.date || null,
+    volumePcrDelta: previous ? diffOrNull(current.volumePcr, previous.volumePcr) : null,
+    volumePcrDeltaX100: previous ? diffOrNull(scale100(current.volumePcr), scale100(previous.volumePcr)) : null,
+    volumePcrVsAvg5Pct: pctDistanceOrNull(current.volumePcr, volumeAvg5),
+    openInterestPcrDelta: previous ? diffOrNull(current.openInterestPcr, previous.openInterestPcr) : null,
+    openInterestPcrDeltaX100: previous ? diffOrNull(scale100(current.openInterestPcr), scale100(previous.openInterestPcr)) : null,
+    openInterestPcrVsAvg5Pct: pctDistanceOrNull(current.openInterestPcr, openInterestAvg5),
+    amountPcrDelta: previous ? diffOrNull(current.amountPcr, previous.amountPcr) : null,
+    amountPcrDeltaX100: previous ? diffOrNull(scale100(current.amountPcr), scale100(previous.amountPcr)) : null,
+    sampleCount: rows.length
+  };
+}
+
+function scale100(value) {
+  const n = numberOrNull(value);
+  return n === null ? null : n * 100;
+}
+
+function diffOrNull(left, right) {
+  const a = numberOrNull(left);
+  const b = numberOrNull(right);
+  if (a === null || b === null) return null;
+  const diff = a - b;
+  return Number.isFinite(diff) ? diff : null;
+}
+
+function pctDistanceOrNull(value, base) {
+  const v = numberOrNull(value);
+  const b = numberOrNull(base);
+  if (v === null || b === null || b === 0) return null;
+  const pct = ((v - b) / Math.abs(b)) * 100;
+  return Number.isFinite(pct) ? pct : null;
+}
+
+function buildKoreaOptionExpiryContext(tradeDateIso) {
+  const currentDate = /^\d{4}-\d{2}-\d{2}$/.test(String(tradeDateIso || '')) ? tradeDateIso : formatKstDate(new Date());
+  const current = new Date(`${currentDate}T00:00:00+09:00`);
+  if (Number.isNaN(current.getTime())) return null;
+  let expiry = secondThursday(current.getFullYear(), current.getMonth());
+  if (current.getTime() > expiry.getTime()) expiry = secondThursday(current.getFullYear(), current.getMonth() + 1);
+  const daysToExpiry = Math.round((expiry.getTime() - current.getTime()) / (24 * 60 * 60 * 1000));
+  const expiryDate = formatKstDate(expiry);
+  const month = expiry.getMonth() + 1;
+  return {
+    tradeDate: currentDate,
+    expiryDate,
+    daysToExpiry,
+    label: daysToExpiry === 0 ? '만기일' : `D-${daysToExpiry}`,
+    isQuarterlyExpiry: [3, 6, 9, 12].includes(month),
+    phase: daysToExpiry <= 1 ? 'expiry_day_window' : daysToExpiry <= 5 ? 'expiry_week' : 'position_building'
+  };
+}
+
+function secondThursday(year, monthIndex) {
+  const first = new Date(Date.UTC(year, monthIndex, 1, 0));
+  const day = first.getUTCDay();
+  const firstThursdayDate = 1 + ((4 - day + 7) % 7);
+  return new Date(Date.UTC(year, monthIndex, firstThursdayDate + 7, 0));
 }
 
 function classifyPutCallRatio(value) {
@@ -1708,6 +1853,12 @@ function formatKstDate(date) {
 
 function formatKstDateCompact(date) {
   return formatKstDate(date).replace(/-/g, '');
+}
+
+function compactKrxDateToIso(value) {
+  const text = String(value || '').replace(/\D/g, '');
+  if (!/^\d{8}$/.test(text)) return null;
+  return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
 }
 
 function impactRank(impact) {

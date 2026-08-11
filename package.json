@@ -25,7 +25,8 @@
     "kis:ngt:collector": "node scripts/kis-ngt-collector.mjs",
     "calendar:freshness": "node scripts/check-weekly-calendar-freshness.mjs",
     "structural:freshness": "node scripts/check-structural-event-freshness.mjs",
-    "pcr:refresh": "scripts/refresh-active-pcr.sh"
+    "pcr:refresh": "scripts/refresh-active-pcr.sh",
+    "krx:pcr:eod:refresh": "scripts/refresh-krx-pcr-eod.sh"
   },
   "engines": {
     "node": ">=20"
