@@ -20,8 +20,9 @@ trap cleanup EXIT
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) KRX short-selling daily refresh start"
 
 # KRX short-selling disclosure commonly has a T+2-ish lag, especially for balance.
-# A morning run should scan a recent window instead of assuming today has final data.
-node scripts/krx-short-selling-daily.mjs --days 12
+# Scan a wider recent window so the dashboard can compare current short balance
+# against a meaningful rolling average and detect acceleration/deceleration.
+node scripts/krx-short-selling-daily.mjs --days 80
 npm run fetch
 npm run publish:supabase
 

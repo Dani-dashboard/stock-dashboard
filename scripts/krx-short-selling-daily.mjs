@@ -18,7 +18,7 @@ const args = parseArgs(process.argv.slice(2));
 const timeoutMs = Number(args['timeout-ms'] || 15000);
 const writeOutput = args.write !== false;
 const endDd = String(args.endDd || args.date || formatKstDateCompact(new Date()));
-const days = Number(args.days || 12);
+const days = Number(args.days || 80);
 const strtDd = String(args.strtDd || compactDateOffset(endDd, -(days - 1)));
 
 const WATCHLIST = [
@@ -77,7 +77,7 @@ try {
     startedAt,
     generatedAt: new Date().toISOString(),
     requestedRange: { strtDd, endDd },
-    expectedLag: '잔고는 통상 T+2 안팎 지연 공시. 아침 갱신은 최근 12일을 뒤로 훑어 최신 유효 거래일을 잡음.',
+    expectedLag: '잔고는 통상 T+2 안팎 지연 공시. 아침 갱신은 최근 80일을 훑어 최신 유효 거래일과 60개 관측치 평균 대비 상태를 잡음.',
     source: 'KRX Data Marketplace short-selling statistics',
     sourcePaths: {
       tradingByIssueTrend: 'dbms/MDC/STAT/srt/MDCSTAT30102',
@@ -116,6 +116,8 @@ function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
     ? latestTrading.shortSellVolumeRatioPct - previousTrading.shortSellVolumeRatioPct
     : null;
   const balanceDelta = latestBalance && previousBalance ? latestBalance.shortSellBalance - previousBalance.shortSellBalance : null;
+  const balanceStats = buildBalanceStats(balanceRows, latestBalance, previousBalance);
+  const tradingStats = buildTradingStats(tradingRows, latestTrading);
   return {
     ...stock,
     status: latestTrading || latestBalance ? 'ok' : 'no_data',
@@ -127,22 +129,107 @@ function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
       shortSellVolume: shortVolumeDelta,
       totalVolume: totalVolumeDelta,
       shortSellVolumeRatioPctp: shortRatioDeltaPctp,
-      shortSellBalance: balanceDelta
+      shortSellBalance: balanceDelta,
+      shortSellBalancePct: latestBalance && previousBalance && previousBalance.shortSellBalance ? (balanceDelta / previousBalance.shortSellBalance) * 100 : null
     },
+    balanceStats,
+    tradingStats,
+    signal: buildShortSellingSignal({ balanceStats, tradingStats, balanceDeltaPct: latestBalance && previousBalance && previousBalance.shortSellBalance ? (balanceDelta / previousBalance.shortSellBalance) * 100 : null }),
     displayNote: latestTrading && latestTrading.tradeDate !== lastWithDate(tradingRows)?.tradeDate ? '당일 공매도 0 표시는 장중/확정 전 예비값으로 판단해 최신 확정 거래일을 표시' : null,
-    history: tradingRows.slice(-8).map(row => ({ 
+    history: tradingRows.slice(-20).map(row => ({ 
       tradeDate: row.tradeDate,
       shortSellVolume: row.shortSellVolume,
       totalVolume: row.totalVolume,
       shortSellVolumeRatioPct: row.shortSellVolumeRatioPct
     })),
-    balanceHistory: balanceRows.slice(-8).map(row => ({
+    balanceHistory: balanceRows.slice(-20).map(row => ({
       tradeDate: row.tradeDate,
       shortSellBalance: row.shortSellBalance,
       listedShares: row.listedShares,
       balanceRatioPct: row.balanceRatioPct
     }))
   };
+}
+
+function buildBalanceStats(balanceRows, latestBalance, previousBalance) {
+  const rows = balanceRows.filter(row => row.shortSellBalance !== null && row.balanceRatioPct !== null).slice(-60);
+  const ratios = rows.map(row => row.balanceRatioPct).filter(Number.isFinite);
+  const balances = rows.map(row => row.shortSellBalance).filter(Number.isFinite);
+  const avgRatioPct = avg(ratios);
+  const avgBalance = avg(balances);
+  const latestRatioPct = latestBalance?.balanceRatioPct ?? null;
+  const latestBalanceQty = latestBalance?.shortSellBalance ?? null;
+  const ratioVsAvgPctp = latestRatioPct !== null && avgRatioPct !== null ? latestRatioPct - avgRatioPct : null;
+  const balanceVsAvgPct = latestBalanceQty !== null && avgBalance ? ((latestBalanceQty / avgBalance) - 1) * 100 : null;
+  const prevBalanceQty = previousBalance?.shortSellBalance ?? null;
+  const oneStepChangePct = latestBalanceQty !== null && prevBalanceQty ? ((latestBalanceQty - prevBalanceQty) / prevBalanceQty) * 100 : null;
+  const last4 = rows.slice(-4);
+  const threeStepChangePct = last4.length >= 4 && last4[0].shortSellBalance ? ((last4.at(-1).shortSellBalance - last4[0].shortSellBalance) / last4[0].shortSellBalance) * 100 : null;
+  const ratioState = ratioVsAvgPctp === null ? 'unknown'
+    : ratioVsAvgPctp >= 0.03 ? 'high'
+    : ratioVsAvgPctp <= -0.03 ? 'low'
+    : 'near_average';
+  const momentum = threeStepChangePct === null ? 'unknown'
+    : threeStepChangePct >= 10 ? 'surging'
+    : threeStepChangePct >= 4 ? 'rising'
+    : threeStepChangePct <= -10 ? 'falling_fast'
+    : threeStepChangePct <= -4 ? 'falling'
+    : 'stable';
+  return {
+    sampleCount: rows.length,
+    latestRatioPct,
+    avgRatioPct,
+    ratioVsAvgPctp,
+    avgBalance,
+    balanceVsAvgPct,
+    oneStepChangePct,
+    threeStepChangePct,
+    ratioState,
+    momentum
+  };
+}
+
+function buildTradingStats(tradingRows, latestTrading) {
+  const rows = tradingRows.filter(row => row.shortSellVolumeRatioPct !== null && Number.isFinite(row.shortSellVolumeRatioPct) && row.tradeDate <= latestTrading?.tradeDate).slice(-60);
+  const ratios = rows.map(row => row.shortSellVolumeRatioPct).filter(Number.isFinite);
+  const volumes = rows.map(row => row.shortSellVolume).filter(Number.isFinite);
+  const avgRatioPct = avg(ratios);
+  const avgVolume = avg(volumes);
+  const latestRatioPct = latestTrading?.shortSellVolumeRatioPct ?? null;
+  const latestVolume = latestTrading?.shortSellVolume ?? null;
+  return {
+    sampleCount: rows.length,
+    latestRatioPct,
+    avgRatioPct,
+    ratioVsAvgPctp: latestRatioPct !== null && avgRatioPct !== null ? latestRatioPct - avgRatioPct : null,
+    avgVolume,
+    volumeVsAvgPct: latestVolume !== null && avgVolume ? ((latestVolume / avgVolume) - 1) * 100 : null,
+    ratioState: latestRatioPct === null || avgRatioPct === null ? 'unknown'
+      : latestRatioPct >= avgRatioPct + 2 ? 'high'
+      : latestRatioPct <= avgRatioPct - 2 ? 'low'
+      : 'near_average'
+  };
+}
+
+function buildShortSellingSignal({ balanceStats, tradingStats, balanceDeltaPct }) {
+  const parts = [];
+  let level = 'neutral';
+  if (balanceStats?.ratioState === 'high') { parts.push('누적잔고 비중이 평균보다 높음'); level = 'watch'; }
+  if (balanceStats?.ratioState === 'low') parts.push('누적잔고 비중은 평균보다 낮음');
+  if (balanceStats?.momentum === 'surging') { parts.push('잔고가 최근 3공시 기준 급증'); level = 'high'; }
+  else if (balanceStats?.momentum === 'rising') { parts.push('잔고 증가세'); if (level === 'neutral') level = 'watch'; }
+  else if (balanceStats?.momentum === 'falling_fast') parts.push('잔고가 빠르게 감소');
+  else if (balanceStats?.momentum === 'falling') parts.push('잔고 감소세');
+  if (tradingStats?.ratioState === 'high') { parts.push('공매도 거래비중도 평균보다 높음'); if (level === 'neutral') level = 'watch'; }
+  if (balanceDeltaPct !== null && balanceDeltaPct >= 10) { parts.push('전회 대비 잔고 +10% 이상'); level = 'high'; }
+  const title = parts.length ? parts.slice(0, 2).join(' · ') : '평균권 공매도 상태';
+  return { level, title, summary: parts.join(' / ') || '최근 평균 대비 큰 이상 신호는 약함' };
+}
+
+function avg(values) {
+  const nums = values.filter(v => Number.isFinite(Number(v))).map(Number);
+  if (!nums.length) return null;
+  return nums.reduce((sum, v) => sum + v, 0) / nums.length;
 }
 
 function normalizeTradingRows(rows) {
@@ -285,7 +372,19 @@ function normalizeDate(value) {
   return s.replaceAll('/', '-');
 }
 function summarizeConsoleItem(item) {
-  return { name: item.name, status: item.status, latestTrading: item.latestTrading?.tradeDate || null, shortSellVolume: item.latestTrading?.shortSellVolume ?? null, totalVolume: item.latestTrading?.totalVolume ?? null, shortSellBalanceDate: item.latestBalance?.tradeDate || null, shortSellBalance: item.latestBalance?.shortSellBalance ?? null, displayNote: item.displayNote || null };
+  return {
+    name: item.name,
+    status: item.status,
+    latestTrading: item.latestTrading?.tradeDate || null,
+    shortSellVolume: item.latestTrading?.shortSellVolume ?? null,
+    totalVolume: item.latestTrading?.totalVolume ?? null,
+    shortSellBalanceDate: item.latestBalance?.tradeDate || null,
+    shortSellBalance: item.latestBalance?.shortSellBalance ?? null,
+    balanceRatioVsAvgPctp: item.balanceStats?.ratioVsAvgPctp ?? null,
+    balanceMomentum: item.balanceStats?.momentum ?? null,
+    signal: item.signal?.title || null,
+    displayNote: item.displayNote || null
+  };
 }
 async function writeJson(file, payload) {
   await fs.mkdir(path.dirname(file), { recursive: true });
