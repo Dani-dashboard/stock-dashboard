@@ -286,7 +286,7 @@
       if (!items.length) {
         return `<section class="shortPanel" id="krx-short-selling"><div class="volumeHead"><div><h2 class="volumeTitle">삼성전자 · SK하이닉스 공매도</h2><div class="volumeSub">KRX 공식 공매도 거래/잔고 · ${escapeHtml(range)}</div></div><div class="eventsMeta">${escapeHtml(generated)}<br>${escapeHtml(status)}</div></div><div class="eventsEmpty">${escapeHtml(shortData?.message || '공매도 데이터 캐시 준비 중')}</div></section>`;
       }
-      return `<section class="shortPanel" id="krx-short-selling"><div class="volumeHead"><div><h2 class="volumeTitle">삼성전자 · SK하이닉스 공매도/대차</h2><div class="volumeSub">핵심 지표: 공매도잔고 ÷ 대차잔고 · KRX 공매도 + 금투협 FreeSIS 대차</div></div><div class="eventsMeta">갱신 ${escapeHtml(generated)}<br>조회 ${escapeHtml(range)}</div></div><div class="notice" style="display:block;margin:0 0 10px;border-color:rgba(168,85,247,.24);background:rgba(59,7,100,.12);">메인 숫자는 <b>공매도잔고 ÷ 대차잔고</b>입니다. 빌린 물량 중 실제 공매도 잔고로 남은 비율을 봅니다.</div><div class="volumeGrid">${items.map(shortSellingCard).join('')}</div>${shortData?.message ? `<div class="note info">${escapeHtml(shortData.message)}</div>` : ''}</section>`;
+      return `<section class="shortPanel" id="krx-short-selling"><div class="volumeHead"><div><h2 class="volumeTitle">삼성전자 · SK하이닉스 공매도/대차</h2><div class="volumeSub">공매도잔고 ÷ 대차잔고 · 낮을수록 빌린 물량 중 실제 숏 전환이 적음</div></div><div class="eventsMeta">${escapeHtml(generated)}<br>${escapeHtml(range)}</div></div><div class="volumeGrid">${items.map(shortSellingCard).join('')}</div>${shortData?.message ? `<div class="note info">${escapeHtml(shortData.message)}</div>` : ''}</section>`;
     }
 
     function shortSellingCard(item) {
@@ -305,10 +305,11 @@
       const ls = item.loanStats || {};
       const loan = item.latestLoan || {};
       const signalCls = signal.level === 'high' ? 'high' : signal.level === 'watch' ? 'active' : 'normal';
+      const signalLabel = ls.shortToLoanRatioPct == null ? '대기' : ls.shortToLoanRatioPct >= 25 ? '높음' : ls.shortToLoanRatioPct >= 10 ? '관찰' : '낮음';
       const shortToLoan = ls.shortToLoanRatioPct == null ? '—' : `${formatValue(ls.shortToLoanRatioPct, 1)}%`;
-      const loanDelta = ls.loanBalanceDelta == null ? '—' : `${formatSignedInteger(ls.loanBalanceDelta)} · ${formatSignedPct(ls.loanBalanceDeltaPct, 1)}`;
-      const tradingAvgNote = ts.avgRatioPct == null ? '거래비중 평균 대기' : `평균 ${formatValue(ts.avgRatioPct, 2)}% 대비 ${formatSignedPoint(ts.ratioVsAvgPctp, 2)}p`;
-      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.name || item.ticker)}</div><div class="meta">${escapeHtml(item.ticker || '')} · 대차 ${escapeHtml(loan.tradeDate || '대기')} · 공매잔고 ${escapeHtml(b.tradeDate || '대기')}</div></div><span class="volumeBadge ${escapeAttr(signalCls)}">${escapeHtml(signal.title || '대차비율')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(shortToLoan)}</div><div class="volumeSub">공매도잔고 ${formatInteger(b.shortSellBalance)} ÷ 대차잔고 ${formatInteger(loan.loanBalance)}<br>${escapeHtml(signal.summary || '')}</div></div><div><div class="volumePct">${formatInteger(loan.loanBalance)}</div><div class="meta">대차잔고</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">대차잔고 변화</div><div class="volumeTickValue">${escapeHtml(loanDelta)}</div></div><div class="volumeTick"><div class="volumeTickTime">공매잔고 변화</div><div class="volumeTickValue">${escapeHtml(balanceDelta)} · ${escapeHtml(balanceDeltaPct)}</div></div><div class="volumeTick"><div class="volumeTickTime">거래 공매비중</div><div class="volumeTickValue">${escapeHtml(ratio)} · ${escapeHtml(tradingAvgNote)}</div></div><div class="volumeTick"><div class="volumeTickTime">공매 거래량</div><div class="volumeTickValue">${formatInteger(t.shortSellVolume)} (${escapeHtml(volumeDelta)})</div></div></div>${item.displayNote ? `<div class="note info">${escapeHtml(item.displayNote)}</div>` : ''}${item.message ? `<div class="note error">${escapeHtml(item.message)}</div>` : ''}</article>`;
+      const loanDelta = ls.loanBalanceDelta == null ? '—' : `${formatSignedPct(ls.loanBalanceDeltaPct, 1)}`;
+      const tradingAvgNote = ts.avgRatioPct == null ? '평균 대기' : `${formatSignedPoint(ts.ratioVsAvgPctp, 2)}p`;
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.name || item.ticker)}</div><div class="meta">${escapeHtml(item.ticker || '')} · 기준 ${escapeHtml(b.tradeDate || loan.tradeDate || '대기')}</div></div><span class="volumeBadge ${escapeAttr(signalCls)}">전환율 ${escapeHtml(signalLabel)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(shortToLoan)}</div><div class="volumeSub">공매잔고 ${formatCompactQty(b.shortSellBalance)} / 대차잔고 ${formatCompactQty(loan.loanBalance)}</div></div><div><div class="volumePct">${formatCompactQty(loan.loanBalance)}</div><div class="meta">대차잔고</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">공매잔고</div><div class="volumeTickValue">${formatCompactQty(b.shortSellBalance)} · ${escapeHtml(balanceDeltaPct)}</div></div><div class="volumeTick"><div class="volumeTickTime">대차변화</div><div class="volumeTickValue">${escapeHtml(loanDelta)}</div></div><div class="volumeTick"><div class="volumeTickTime">거래비중</div><div class="volumeTickValue">${escapeHtml(ratio)} (${escapeHtml(tradingAvgNote)})</div></div><div class="volumeTick"><div class="volumeTickTime">공매거래</div><div class="volumeTickValue">${formatCompactQty(t.shortSellVolume)}</div></div></div>${item.displayNote ? `<div class="note info">${escapeHtml(item.displayNote)}</div>` : ''}${item.message ? `<div class="note error">${escapeHtml(item.message)}</div>` : ''}</article>`;
     }
 
     function formatRatio(value) {
@@ -357,6 +358,14 @@
     function formatInteger(value) {
       if (value == null || Number.isNaN(Number(value))) return '—';
       return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Number(value));
+    }
+
+    function formatCompactQty(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      if (Math.abs(n) >= 100000000) return `${formatValue(n / 100000000, 1)}억`;
+      if (Math.abs(n) >= 10000) return `${formatValue(n / 10000, 1)}만`;
+      return formatInteger(n);
     }
 
     function formatSignedInteger(value) {
