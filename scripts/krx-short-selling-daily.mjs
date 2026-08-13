@@ -106,7 +106,7 @@ try {
 function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
   const tradingRows = normalizeTradingRows(tradingRowsRaw).sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
   const balanceRows = normalizeBalanceRows(balanceRowsRaw).sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
-  const latestTrading = lastWithDate(tradingRows);
+  const latestTrading = latestFinalTradingRow(tradingRows);
   const previousTrading = previousBefore(tradingRows, latestTrading?.tradeDate);
   const latestBalance = lastWithDate(balanceRows);
   const previousBalance = previousBefore(balanceRows, latestBalance?.tradeDate);
@@ -129,7 +129,8 @@ function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
       shortSellVolumeRatioPctp: shortRatioDeltaPctp,
       shortSellBalance: balanceDelta
     },
-    history: tradingRows.slice(-8).map(row => ({
+    displayNote: latestTrading && latestTrading.tradeDate !== lastWithDate(tradingRows)?.tradeDate ? '당일 공매도 0 표시는 장중/확정 전 예비값으로 판단해 최신 확정 거래일을 표시' : null,
+    history: tradingRows.slice(-8).map(row => ({ 
       tradeDate: row.tradeDate,
       shortSellVolume: row.shortSellVolume,
       totalVolume: row.totalVolume,
@@ -258,6 +259,16 @@ function cookieHeader(jar) {
   return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
+function latestFinalTradingRow(rows) {
+  const dated = rows.filter(row => row.tradeDate);
+  const today = formatKstDateIso(new Date());
+  const nowKstMinutes = currentKstMinutes(new Date());
+  // KRX can expose today's total volume before the short-selling fields are finalized.
+  // Before 18:30 KST, treat today's zero short-selling row as preliminary and keep
+  // showing the latest previous finalized row instead of a misleading 0.
+  const finalized = dated.filter(row => !(row.tradeDate === today && nowKstMinutes < 18 * 60 + 30 && Number(row.shortSellVolume || 0) === 0));
+  return finalized.at(-1) || dated.at(-1) || null;
+}
 function lastWithDate(rows) { return rows.filter(row => row.tradeDate).at(-1) || null; }
 function previousBefore(rows, tradeDate) { return rows.filter(row => row.tradeDate && row.tradeDate < tradeDate).at(-1) || null; }
 function pct(a, b) { return a !== null && b ? (a / b) * 100 : null; }
@@ -274,14 +285,23 @@ function normalizeDate(value) {
   return s.replaceAll('/', '-');
 }
 function summarizeConsoleItem(item) {
-  return { name: item.name, status: item.status, latestTrading: item.latestTrading?.tradeDate || null, shortSellVolume: item.latestTrading?.shortSellVolume ?? null, totalVolume: item.latestTrading?.totalVolume ?? null, shortSellBalanceDate: item.latestBalance?.tradeDate || null, shortSellBalance: item.latestBalance?.shortSellBalance ?? null };
+  return { name: item.name, status: item.status, latestTrading: item.latestTrading?.tradeDate || null, shortSellVolume: item.latestTrading?.shortSellVolume ?? null, totalVolume: item.latestTrading?.totalVolume ?? null, shortSellBalanceDate: item.latestBalance?.tradeDate || null, shortSellBalance: item.latestBalance?.shortSellBalance ?? null, displayNote: item.displayNote || null };
 }
 async function writeJson(file, payload) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, `${JSON.stringify(payload, null, 2)}\n`);
 }
 function formatKstDateCompact(date) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date).replace(/-/g, '');
+  return formatKstDateIso(date).replace(/-/g, '');
+}
+function formatKstDateIso(date) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+function currentKstMinutes(date) {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
+  const hour = Number(parts.find(p => p.type === 'hour')?.value || 0);
+  const minute = Number(parts.find(p => p.type === 'minute')?.value || 0);
+  return hour * 60 + minute;
 }
 function compactDateOffset(yyyymmdd, offsetDays) {
   const d = new Date(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}T00:00:00+09:00`);
