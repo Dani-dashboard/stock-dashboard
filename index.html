@@ -286,30 +286,29 @@
       if (!items.length) {
         return `<section class="shortPanel" id="krx-short-selling"><div class="volumeHead"><div><h2 class="volumeTitle">삼성전자 · SK하이닉스 공매도</h2><div class="volumeSub">KRX 공식 공매도 거래/잔고 · ${escapeHtml(range)}</div></div><div class="eventsMeta">${escapeHtml(generated)}<br>${escapeHtml(status)}</div></div><div class="eventsEmpty">${escapeHtml(shortData?.message || '공매도 데이터 캐시 준비 중')}</div></section>`;
       }
-      return `<section class="shortPanel" id="krx-short-selling"><div class="volumeHead"><div><h2 class="volumeTitle">삼성전자 · SK하이닉스 공매도/대차</h2><div class="volumeSub">공매도잔고 ÷ 대차잔고 · 낮을수록 빌린 물량 중 실제 숏 전환이 적음</div></div><div class="eventsMeta">${escapeHtml(generated)}<br>${escapeHtml(range)}</div></div><div class="volumeGrid">${items.map(shortSellingCard).join('')}</div>${shortData?.message ? `<div class="note info">${escapeHtml(shortData.message)}</div>` : ''}</section>`;
+      return `<section class="shortPanel" id="krx-short-selling"><div class="volumeHead"><div><h2 class="volumeTitle">삼성전자 · SK하이닉스 공매도/대차</h2><div class="volumeSub">10거래일 기준 · 공매도잔고/대차잔고/당일 flow 동일 산식</div></div><div class="eventsMeta">${escapeHtml(generated)}<br>${escapeHtml(range)}</div></div><div class="volumeGrid">${items.map(shortSellingCard).join('')}</div>${shortData?.message ? `<div class="note info">${escapeHtml(shortData.message)}</div>` : ''}</section>`;
     }
 
     function shortSellingCard(item) {
       const t = item.latestTrading || {};
       const b = item.latestBalance || {};
       const d = item.deltas || {};
-      const status = item.status === 'ok' ? 'normal' : 'warn';
-      const ratio = t.shortSellVolumeRatioPct == null ? '—' : `${formatValue(t.shortSellVolumeRatioPct, 2)}%`;
-      const balanceRatio = b.balanceRatioPct == null ? '—' : `${formatValue(b.balanceRatioPct, 2)}%`;
-      const balanceDelta = d.shortSellBalance == null ? '—' : formatSignedInteger(d.shortSellBalance);
-      const balanceDeltaPct = d.shortSellBalancePct == null ? '—' : formatSignedPct(d.shortSellBalancePct, 1);
-      const volumeDelta = d.shortSellVolume == null ? '—' : formatSignedInteger(d.shortSellVolume);
-      const bs = item.balanceStats || {};
-      const ts = item.tradingStats || {};
-      const signal = item.signal || {};
-      const ls = item.loanStats || {};
+      const pressure = item.pressure || {};
+      const signal = pressure.signal || item.signal || {};
+      const latest = pressure.latest || {};
+      const flow = pressure.latestFlow || {};
+      const tenD = pressure.windows?.tenD || null;
       const loan = item.latestLoan || {};
-      const signalCls = signal.level === 'high' ? 'high' : signal.level === 'watch' ? 'active' : 'normal';
-      const signalLabel = ls.shortToLoanRatioPct == null ? '대기' : ls.shortToLoanRatioPct >= 25 ? '높음' : ls.shortToLoanRatioPct >= 10 ? '관찰' : '낮음';
-      const shortToLoan = ls.shortToLoanRatioPct == null ? '—' : `${formatValue(ls.shortToLoanRatioPct, 1)}%`;
-      const loanDelta = ls.loanBalanceDelta == null ? '—' : `${formatSignedPct(ls.loanBalanceDeltaPct, 1)}`;
-      const tradingAvgNote = ts.avgRatioPct == null ? '평균 대기' : `${formatSignedPoint(ts.ratioVsAvgPctp, 2)}p`;
-      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.name || item.ticker)}</div><div class="meta">${escapeHtml(item.ticker || '')} · 기준 ${escapeHtml(b.tradeDate || loan.tradeDate || '대기')}</div></div><span class="volumeBadge ${escapeAttr(signalCls)}">전환율 ${escapeHtml(signalLabel)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(shortToLoan)}</div><div class="volumeSub">공매잔고 ${formatCompactQty(b.shortSellBalance)} / 대차잔고 ${formatCompactQty(loan.loanBalance)}</div></div><div><div class="volumePct">${formatCompactQty(loan.loanBalance)}</div><div class="meta">대차잔고</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">공매잔고</div><div class="volumeTickValue">${formatCompactQty(b.shortSellBalance)} · ${escapeHtml(balanceDeltaPct)}</div></div><div class="volumeTick"><div class="volumeTickTime">대차변화</div><div class="volumeTickValue">${escapeHtml(loanDelta)}</div></div><div class="volumeTick"><div class="volumeTickTime">거래비중</div><div class="volumeTickValue">${escapeHtml(ratio)} (${escapeHtml(tradingAvgNote)})</div></div><div class="volumeTick"><div class="volumeTickTime">공매거래</div><div class="volumeTickValue">${formatCompactQty(t.shortSellVolume)}</div></div></div>${item.displayNote ? `<div class="note info">${escapeHtml(item.displayNote)}</div>` : ''}${item.message ? `<div class="note error">${escapeHtml(item.message)}</div>` : ''}</article>`;
+      const score = signal.score == null ? '—' : String(signal.score);
+      const signalCls = signal.level === 'high' ? 'high' : signal.level === 'watch' ? 'active' : signal.level === 'relief' ? 'quiet' : 'normal';
+      const shortToLoan = latest.shortLoanRatioPct == null ? (item.loanStats?.shortToLoanRatioPct == null ? '—' : `${formatValue(item.loanStats.shortToLoanRatioPct, 1)}%`) : `${formatValue(latest.shortLoanRatioPct, 1)}%`;
+      const short10 = tenD?.shortBalancePct == null ? '—' : formatSignedPct(tenD.shortBalancePct, 1);
+      const loan10 = tenD?.loanBalancePct == null ? '—' : formatSignedPct(tenD.loanBalancePct, 1);
+      const ratio10 = tenD?.shortLoanRatioPctp == null ? '—' : `${formatSignedPoint(tenD.shortLoanRatioPctp, 1)}p`;
+      const flowVsAvg = flow.vsFiveDayAveragePctp == null ? '—' : `${formatSignedPoint(flow.vsFiveDayAveragePctp, 1)}p`;
+      const flowRatio = flow.shortSaleRatioPct == null ? (t.shortSellVolumeRatioPct == null ? '—' : `${formatValue(t.shortSellVolumeRatioPct, 2)}%`) : `${formatValue(flow.shortSaleRatioPct, 2)}%`;
+      const basisDate = latest.tradeDate || b.tradeDate || loan.tradeDate || '대기';
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.name || item.ticker)}</div><div class="meta">${escapeHtml(item.ticker || '')} · 확정 ${escapeHtml(basisDate)} · flow ${escapeHtml(flow.tradeDate || t.tradeDate || '대기')}</div></div><span class="volumeBadge ${escapeAttr(signalCls)}">${escapeHtml(signal.title || 'Short Pressure')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(score)}</div><div class="volumeSub">SHORT PRESSURE · ${escapeHtml(signal.summary || '')}</div></div><div><div class="volumePct">${escapeHtml(shortToLoan)}</div><div class="meta">공매/대차</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">공매잔고 10D</div><div class="volumeTickValue">${escapeHtml(short10)} · ${formatCompactQty(latest.shortBalance || b.shortSellBalance)}</div></div><div class="volumeTick"><div class="volumeTickTime">공매/대차 10D</div><div class="volumeTickValue">${escapeHtml(ratio10)} · ${escapeHtml(shortToLoan)}</div></div><div class="volumeTick"><div class="volumeTickTime">대차잔고 10D</div><div class="volumeTickValue">${escapeHtml(loan10)} · ${formatCompactQty(latest.loanBalance || loan.loanBalance)}</div></div><div class="volumeTick"><div class="volumeTickTime">당일 공매도</div><div class="volumeTickValue">${escapeHtml(flowRatio)} (${escapeHtml(flowVsAvg)})</div></div></div>${item.displayNote ? `<div class="note info">${escapeHtml(item.displayNote)}</div>` : ''}${item.message ? `<div class="note error">${escapeHtml(item.message)}</div>` : ''}</article>`;
     }
 
     function formatRatio(value) {
