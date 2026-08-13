@@ -11,6 +11,8 @@ const DATA_URL = 'https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd';
 const LOGIN_PAGE = 'https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001.cmd';
 const LOGIN_JSP = 'https://data.krx.co.kr/contents/MDC/COMS/client/view/login.jsp?site=mdc';
 const LOGIN_URL = 'https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001D1.cmd';
+const FREESIS_LOAN_URL = 'http://freesis.kofia.or.kr/meta/getMetaDataList.do';
+const FREESIS_REFERER = 'http://freesis.kofia.or.kr/stat/FreeSIS.do?parentDivId=MSIS10000000000000&serviceId=STATSCU0100000140';
 const REFERER = 'https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd';
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 stock-dashboard-krx-short/0.1';
 
@@ -42,7 +44,8 @@ if (!krxId || !krxPw) {
     source: 'KRX Data Marketplace short-selling statistics',
     sourcePaths: {
       tradingByIssueTrend: 'dbms/MDC/STAT/srt/MDCSTAT30102',
-      balanceByIssueTrend: 'dbms/MDC/STAT/srt/MDCSTAT30502'
+      balanceByIssueTrend: 'dbms/MDC/STAT/srt/MDCSTAT30502',
+      securitiesLendingTrend: 'KOFIA FreeSIS STATSCU0100000140BO'
     },
     items: WATCHLIST.map(stock => ({ ...stock, status: 'blocked_missing_krx_login' }))
   };
@@ -67,7 +70,8 @@ try {
       endDd,
       isuCd: stock.isin
     }, { timeoutMs });
-    items.push(buildStockPayload(stock, tradingRows, balanceRows));
+    const loanRows = await fetchFreeSisLoanRows(stock, { strtDd, endDd, timeoutMs });
+    items.push(buildStockPayload(stock, tradingRows, balanceRows, loanRows));
     await sleep(350);
   }
   const usable = items.some(item => item.latestTrading || item.latestBalance);
@@ -81,7 +85,8 @@ try {
     source: 'KRX Data Marketplace short-selling statistics',
     sourcePaths: {
       tradingByIssueTrend: 'dbms/MDC/STAT/srt/MDCSTAT30102',
-      balanceByIssueTrend: 'dbms/MDC/STAT/srt/MDCSTAT30502'
+      balanceByIssueTrend: 'dbms/MDC/STAT/srt/MDCSTAT30502',
+      securitiesLendingTrend: 'KOFIA FreeSIS STATSCU0100000140BO'
     },
     items
   };
@@ -103,9 +108,10 @@ try {
   process.exitCode = 1;
 }
 
-function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
+function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw, loanRowsRaw = []) {
   const tradingRows = normalizeTradingRows(tradingRowsRaw).sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
   const balanceRows = normalizeBalanceRows(balanceRowsRaw).sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
+  const loanRows = normalizeLoanRows(loanRowsRaw).sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
   const latestTrading = latestFinalTradingRow(tradingRows);
   const previousTrading = previousBefore(tradingRows, latestTrading?.tradeDate);
   const latestBalance = lastWithDate(balanceRows);
@@ -116,6 +122,9 @@ function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
     ? latestTrading.shortSellVolumeRatioPct - previousTrading.shortSellVolumeRatioPct
     : null;
   const balanceDelta = latestBalance && previousBalance ? latestBalance.shortSellBalance - previousBalance.shortSellBalance : null;
+  const latestLoan = latestLoanForBalanceDate(loanRows, latestBalance?.tradeDate);
+  const previousLoan = previousBefore(loanRows, latestLoan?.tradeDate);
+  const loanStats = buildLoanStats(loanRows, latestLoan, latestBalance);
   const balanceStats = buildBalanceStats(balanceRows, latestBalance, previousBalance);
   const tradingStats = buildTradingStats(tradingRows, latestTrading);
   return {
@@ -125,6 +134,8 @@ function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
     previousTrading,
     latestBalance,
     previousBalance,
+    latestLoan,
+    previousLoan,
     deltas: {
       shortSellVolume: shortVolumeDelta,
       totalVolume: totalVolumeDelta,
@@ -134,7 +145,8 @@ function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
     },
     balanceStats,
     tradingStats,
-    signal: buildShortSellingSignal({ balanceStats, tradingStats, balanceDeltaPct: latestBalance && previousBalance && previousBalance.shortSellBalance ? (balanceDelta / previousBalance.shortSellBalance) * 100 : null }),
+    loanStats,
+    signal: buildShortSellingSignal({ balanceStats, tradingStats, loanStats, balanceDeltaPct: latestBalance && previousBalance && previousBalance.shortSellBalance ? (balanceDelta / previousBalance.shortSellBalance) * 100 : null }),
     displayNote: latestTrading && latestTrading.tradeDate !== lastWithDate(tradingRows)?.tradeDate ? '당일 공매도 0 표시는 장중/확정 전 예비값으로 판단해 최신 확정 거래일을 표시' : null,
     history: tradingRows.slice(-20).map(row => ({ 
       tradeDate: row.tradeDate,
@@ -147,7 +159,67 @@ function buildStockPayload(stock, tradingRowsRaw, balanceRowsRaw) {
       shortSellBalance: row.shortSellBalance,
       listedShares: row.listedShares,
       balanceRatioPct: row.balanceRatioPct
+    })),
+    loanHistory: loanRows.slice(-20).map(row => ({
+      tradeDate: row.tradeDate,
+      loanBalance: row.loanBalance,
+      loanTradeNew: row.loanTradeNew,
+      loanTradeRedeem: row.loanTradeRedeem
     }))
+  };
+}
+
+async function fetchFreeSisLoanRows(stock, { strtDd, endDd, timeoutMs }) {
+  const response = await fetch(FREESIS_LOAN_URL, {
+    method: 'POST',
+    headers: {
+      'user-agent': USER_AGENT,
+      'content-type': 'application/json; charset=UTF-8',
+      'accept': 'application/json, text/plain, */*',
+      'referer': FREESIS_REFERER
+    },
+    body: JSON.stringify({
+      dmSearch: {
+        tmpV40: '1000000',
+        tmpV41: '1',
+        tmpV1: 'D',
+        tmpV45: strtDd,
+        tmpV46: endDd,
+        tmpV72: stock.ticker,
+        OBJ_NM: 'STATSCU0100000140BO'
+      }
+    }),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  const text = await response.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch {}
+  if (!response.ok) throw new Error(`FreeSIS loan HTTP ${response.status}: ${text.slice(0, 200)}`);
+  if (!json) throw new Error(`FreeSIS loan non-JSON response: ${text.slice(0, 200)}`);
+  return Array.isArray(json.ds1) ? json.ds1 : [];
+}
+
+function buildLoanStats(loanRows, latestLoan, latestBalance) {
+  const loanBalance = latestLoan?.loanBalance ?? null;
+  const shortBalance = latestBalance?.shortSellBalance ?? null;
+  const shortToLoanRatioPct = shortBalance !== null && loanBalance ? (shortBalance / loanBalance) * 100 : null;
+  const rows = loanRows.filter(row => row.loanBalance !== null).slice(-60);
+  const avgLoanBalance = avg(rows.map(row => row.loanBalance));
+  const previous = previousBefore(loanRows, latestLoan?.tradeDate);
+  const loanBalanceDelta = latestLoan && previous ? latestLoan.loanBalance - previous.loanBalance : null;
+  const loanBalanceDeltaPct = latestLoan && previous?.loanBalance ? (loanBalanceDelta / previous.loanBalance) * 100 : null;
+  return {
+    source: 'KOFIA FreeSIS STATSCU0100000140BO',
+    sampleCount: rows.length,
+    latestDate: latestLoan?.tradeDate ?? null,
+    loanBalance,
+    loanTradeNew: latestLoan?.loanTradeNew ?? null,
+    loanTradeRedeem: latestLoan?.loanTradeRedeem ?? null,
+    avgLoanBalance,
+    loanBalanceVsAvgPct: loanBalance !== null && avgLoanBalance ? ((loanBalance / avgLoanBalance) - 1) * 100 : null,
+    loanBalanceDelta,
+    loanBalanceDeltaPct,
+    shortToLoanRatioPct
   };
 }
 
@@ -211,30 +283,25 @@ function buildTradingStats(tradingRows, latestTrading) {
   };
 }
 
-function buildShortSellingSignal({ balanceStats, tradingStats, balanceDeltaPct }) {
+function buildShortSellingSignal({ balanceStats, tradingStats, loanStats, balanceDeltaPct }) {
   const parts = [];
   let level = 'neutral';
-  const latestRatio = Number(balanceStats?.latestRatioPct);
-  const absoluteLowBase = Number.isFinite(latestRatio) && latestRatio < 0.05;
-  const absoluteMeaningful = Number.isFinite(latestRatio) && latestRatio >= 0.1;
-  if (balanceStats?.ratioState === 'high') { parts.push('누적잔고 비중이 평균보다 높음'); level = 'watch'; }
-  if (balanceStats?.ratioState === 'low') parts.push('누적잔고 비중은 평균보다 낮음');
-  if (balanceStats?.momentum === 'surging') {
-    parts.push(absoluteLowBase ? '낮은 베이스에서 잔고 급증' : '잔고가 최근 3공시 기준 급증');
-    level = absoluteMeaningful ? 'high' : 'watch';
+  const shortToLoan = Number(loanStats?.shortToLoanRatioPct);
+  if (Number.isFinite(shortToLoan)) {
+    if (shortToLoan >= 25) { parts.push('대차잔고 대비 공매도잔고 비율 높음'); level = 'high'; }
+    else if (shortToLoan >= 10) { parts.push('대차잔고 대비 공매도잔고 비율 관찰권'); level = 'watch'; }
+    else parts.push('대차잔고 대비 공매도 전환율 낮음');
+  } else {
+    parts.push('대차잔고 비율 산출 대기');
   }
-  else if (balanceStats?.momentum === 'rising') { parts.push('잔고 증가세'); if (level === 'neutral') level = 'watch'; }
-  else if (balanceStats?.momentum === 'falling_fast') parts.push('잔고가 빠르게 감소');
-  else if (balanceStats?.momentum === 'falling') parts.push('잔고 감소세');
-  if (tradingStats?.ratioState === 'high') { parts.push('공매도 거래비중도 평균보다 높음'); if (level === 'neutral') level = 'watch'; }
-  if (balanceDeltaPct !== null && balanceDeltaPct >= 10) {
-    parts.push(absoluteLowBase ? '전회 대비 증감률은 크지만 절대 잔고비중은 낮음' : '전회 대비 잔고 +10% 이상');
-    if (absoluteMeaningful) level = 'high';
-    else if (level === 'neutral') level = 'watch';
+  if (loanStats?.loanBalanceDeltaPct !== null && loanStats?.loanBalanceDeltaPct !== undefined) {
+    if (loanStats.loanBalanceDeltaPct >= 5) { parts.push('대차잔고 증가'); if (level === 'neutral') level = 'watch'; }
+    else if (loanStats.loanBalanceDeltaPct <= -5) parts.push('대차잔고 감소');
   }
-  const title = parts.length ? parts.slice(0, 2).join(' · ') : '평균권 공매도 상태';
-  const baseNote = absoluteLowBase ? '절대 잔고비중이 0.05% 미만이라 영향력은 제한적으로 해석' : null;
-  return { level, title, summary: [parts.join(' / ') || '최근 평균 대비 큰 이상 신호는 약함', baseNote].filter(Boolean).join(' / ') };
+  if (balanceDeltaPct !== null && balanceDeltaPct >= 10) { parts.push('공매도잔고 전회 대비 급증'); if (level === 'neutral') level = 'watch'; }
+  if (tradingStats?.ratioState === 'high') { parts.push('당일 공매도 거래비중 평균 상회'); if (level === 'neutral') level = 'watch'; }
+  const title = parts.length ? parts.slice(0, 2).join(' · ') : '대차/공매도 평균권';
+  return { level, title, summary: parts.join(' / ') || '대차잔고 대비 공매도 전환율 기준 이상 신호 약함' };
 }
 
 function avg(values) {
@@ -259,6 +326,17 @@ function normalizeTradingRows(rows) {
       shortSellValueRatioPct: num(row.TRDVAL_WT) ?? pct(shortSellValue, totalValue)
     };
   }).filter(row => row.tradeDate);
+}
+
+function normalizeLoanRows(rows) {
+  return rows.map(row => ({
+    tradeDate: normalizeDate(row.TMPV1),
+    issueName: row.TMPV2 || null,
+    loanTradeNew: num(row.TMPV3),
+    loanTradeRedeem: num(row.TMPV4),
+    loanBalance: num(row.TMPV5),
+    loanBalanceValue: num(row.TMPV6)
+  })).filter(row => row.tradeDate && row.tradeDate !== '합계' && row.tradeDate !== '평균');
 }
 
 function normalizeBalanceRows(rows) {
@@ -355,6 +433,11 @@ function updateCookies(jar, headers) {
 function cookieHeader(jar) {
   if (!jar || !jar.size) return '';
   return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+function latestLoanForBalanceDate(loanRows, balanceDate) {
+  if (!balanceDate) return lastWithDate(loanRows);
+  return loanRows.filter(row => row.tradeDate && row.tradeDate <= balanceDate).at(-1) || lastWithDate(loanRows);
 }
 
 function latestFinalTradingRow(rows) {
