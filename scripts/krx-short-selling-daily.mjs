@@ -214,16 +214,27 @@ function buildTradingStats(tradingRows, latestTrading) {
 function buildShortSellingSignal({ balanceStats, tradingStats, balanceDeltaPct }) {
   const parts = [];
   let level = 'neutral';
+  const latestRatio = Number(balanceStats?.latestRatioPct);
+  const absoluteLowBase = Number.isFinite(latestRatio) && latestRatio < 0.05;
+  const absoluteMeaningful = Number.isFinite(latestRatio) && latestRatio >= 0.1;
   if (balanceStats?.ratioState === 'high') { parts.push('누적잔고 비중이 평균보다 높음'); level = 'watch'; }
   if (balanceStats?.ratioState === 'low') parts.push('누적잔고 비중은 평균보다 낮음');
-  if (balanceStats?.momentum === 'surging') { parts.push('잔고가 최근 3공시 기준 급증'); level = 'high'; }
+  if (balanceStats?.momentum === 'surging') {
+    parts.push(absoluteLowBase ? '낮은 베이스에서 잔고 급증' : '잔고가 최근 3공시 기준 급증');
+    level = absoluteMeaningful ? 'high' : 'watch';
+  }
   else if (balanceStats?.momentum === 'rising') { parts.push('잔고 증가세'); if (level === 'neutral') level = 'watch'; }
   else if (balanceStats?.momentum === 'falling_fast') parts.push('잔고가 빠르게 감소');
   else if (balanceStats?.momentum === 'falling') parts.push('잔고 감소세');
   if (tradingStats?.ratioState === 'high') { parts.push('공매도 거래비중도 평균보다 높음'); if (level === 'neutral') level = 'watch'; }
-  if (balanceDeltaPct !== null && balanceDeltaPct >= 10) { parts.push('전회 대비 잔고 +10% 이상'); level = 'high'; }
+  if (balanceDeltaPct !== null && balanceDeltaPct >= 10) {
+    parts.push(absoluteLowBase ? '전회 대비 증감률은 크지만 절대 잔고비중은 낮음' : '전회 대비 잔고 +10% 이상');
+    if (absoluteMeaningful) level = 'high';
+    else if (level === 'neutral') level = 'watch';
+  }
   const title = parts.length ? parts.slice(0, 2).join(' · ') : '평균권 공매도 상태';
-  return { level, title, summary: parts.join(' / ') || '최근 평균 대비 큰 이상 신호는 약함' };
+  const baseNote = absoluteLowBase ? '절대 잔고비중이 0.05% 미만이라 영향력은 제한적으로 해석' : null;
+  return { level, title, summary: [parts.join(' / ') || '최근 평균 대비 큰 이상 신호는 약함', baseNote].filter(Boolean).join(' / ') };
 }
 
 function avg(values) {
