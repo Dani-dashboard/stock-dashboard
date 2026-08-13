@@ -97,6 +97,12 @@
     .volumeTick { border:1px solid rgba(148,163,184,.14); border-radius:10px; padding:6px; min-height:42px; min-width:0; }
     .volumeTickTime { font-size:10px; color:#bbf7d0; font-weight:800; }
     .volumeTickValue { margin-top:3px; font-size:11px; color:#cbd5e1; }
+    .shortPanel { border:1px solid rgba(168,85,247,.24); background:rgba(59,7,100,.16); border-radius:18px; padding:14px; margin:18px 0 0; }
+    .shortPanel .volumeTitle { color:#e9d5ff; }
+    .shortPanel .volumeName { color:#f3e8ff; }
+    .shortPanel .volumePct { color:#d8b4fe; }
+    .shortPanel .volumeTickTime { color:#e9d5ff; }
+    .shortPanel .volumeCard { border-color:rgba(168,85,247,.22); background:rgba(15,23,42,.58); }
     .groupSummary { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; margin-bottom:18px; }
     .groupPill { border:1px solid var(--line); background:rgba(24,36,60,.72); border-radius:14px; padding:11px; }
     .groupPill strong { display:block; font-size:13px; margin-bottom:6px; color:#dbeafe; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -220,7 +226,7 @@
       renderTodayIssues(data, eventData);
       const groups = groupBy(data.metrics, x => x.group || 'Other');
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
-      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}`;
+      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${shortSellingPanel(data.krxShortSellingDaily)}`;
       setTimeout(load, (data.refreshSeconds || 60) * 1000);
     }
 
@@ -272,6 +278,29 @@
       return `<section class="volumePanel" id="pcr-panel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 EOD 풋콜 상태</h2><div class="volumeSub">${escapeHtml(eodMeta)} · ${escapeHtml(pcr.quality === 'OFFICIAL_EOD' ? 'KRX 공식 일별매매정보' : '검증 중')}</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid">${interpretationBox}<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">당일 반응: 전체 누적 풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(canUseValues ? (state.label || pcr.status) : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(volumeMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(volumeX100)}<br>${escapeHtml(volumeNote)}</div></div><div><div class="volumePct">${escapeHtml(volumeDelta)}p</div><div class="meta">전일비</div></div></div><div class="note info">${escapeHtml(canUseValues ? (state.guidance || '') : 'ATM 주변 표본값은 진단용으로만 저장하고 대표 PCR로 표시하지 않음')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">포지션 PCR</div><div class="meta">잔존 포지션: 전체 미결제약정 풋 ÷ 콜</div></div><span class="volumeBadge warn">${escapeHtml(canUseValues ? 'EOD 포지션' : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(oiMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(oiX100)}<br>${escapeHtml(oiNote)}</div></div><div><div class="volumePct">${escapeHtml(oiDelta)}p</div><div class="meta">전일비</div></div></div><div class="note info">${escapeHtml(positionNote)}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">CALL OI</div><div class="volumeTickValue">${escapeHtml(callOi)}</div></div><div class="volumeTick"><div class="volumeTickTime">PUT OI</div><div class="volumeTickValue">${escapeHtml(putOi)}</div></div></div></article></div></section>`;
     }
 
+    function shortSellingPanel(shortData) {
+      const items = Array.isArray(shortData?.items) ? shortData.items : [];
+      const status = shortData?.status || 'not_ready';
+      const generated = shortData?.generatedAt ? new Date(shortData.generatedAt).toLocaleString('ko-KR') : '대기';
+      const range = shortData?.requestedRange ? `${compactDateLabel(shortData.requestedRange.strtDd)}~${compactDateLabel(shortData.requestedRange.endDd)}` : '최근 12일';
+      if (!items.length) {
+        return `<section class="shortPanel" id="krx-short-selling"><div class="volumeHead"><div><h2 class="volumeTitle">삼성전자 · SK하이닉스 공매도</h2><div class="volumeSub">KRX 공식 공매도 거래/잔고 · ${escapeHtml(range)}</div></div><div class="eventsMeta">${escapeHtml(generated)}<br>${escapeHtml(status)}</div></div><div class="eventsEmpty">${escapeHtml(shortData?.message || '공매도 데이터 캐시 준비 중')}</div></section>`;
+      }
+      return `<section class="shortPanel" id="krx-short-selling"><div class="volumeHead"><div><h2 class="volumeTitle">삼성전자 · SK하이닉스 공매도</h2><div class="volumeSub">KRX 공식 공매도 거래량/누적잔고 · 아침 T+2 최신 유효일 기준</div></div><div class="eventsMeta">갱신 ${escapeHtml(generated)}<br>조회 ${escapeHtml(range)}</div></div><div class="volumeGrid">${items.map(shortSellingCard).join('')}</div>${shortData?.message ? `<div class="note info">${escapeHtml(shortData.message)}</div>` : ''}</section>`;
+    }
+
+    function shortSellingCard(item) {
+      const t = item.latestTrading || {};
+      const b = item.latestBalance || {};
+      const d = item.deltas || {};
+      const status = item.status === 'ok' ? 'normal' : 'warn';
+      const ratio = t.shortSellVolumeRatioPct == null ? '—' : `${formatValue(t.shortSellVolumeRatioPct, 2)}%`;
+      const balanceRatio = b.balanceRatioPct == null ? '—' : `${formatValue(b.balanceRatioPct, 2)}%`;
+      const balanceDelta = d.shortSellBalance == null ? '—' : formatSignedInteger(d.shortSellBalance);
+      const volumeDelta = d.shortSellVolume == null ? '—' : formatSignedInteger(d.shortSellVolume);
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.name || item.ticker)}</div><div class="meta">${escapeHtml(item.ticker || '')} · 거래 ${escapeHtml(t.tradeDate || '대기')} · 잔고 ${escapeHtml(b.tradeDate || '대기')}</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(item.status || '확인')}</span></div><div class="volumeMain"><div><div class="volumeValue">${formatInteger(t.shortSellVolume)}</div><div class="volumeSub">공매도 거래량 · 전체 거래량 ${formatInteger(t.totalVolume)}<br>공매도 거래비중 ${escapeHtml(ratio)} · 전일비 ${escapeHtml(volumeDelta)}</div></div><div><div class="volumePct">${formatInteger(b.shortSellBalance)}</div><div class="meta">누적 잔고</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">잔고 변화</div><div class="volumeTickValue">${escapeHtml(balanceDelta)}</div></div><div class="volumeTick"><div class="volumeTickTime">잔고 비중</div><div class="volumeTickValue">${escapeHtml(balanceRatio)}</div></div><div class="volumeTick"><div class="volumeTickTime">공매 대금</div><div class="volumeTickValue">${formatInteger(t.shortSellValue)}</div></div><div class="volumeTick"><div class="volumeTickTime">거래비중 변화</div><div class="volumeTickValue">${escapeHtml(formatSignedPoint(d.shortSellVolumeRatioPctp, 2))}p</div></div></div>${item.message ? `<div class="note error">${escapeHtml(item.message)}</div>` : ''}</article>`;
+    }
+
     function formatRatio(value) {
       if (value == null || Number.isNaN(Number(value))) return '—';
       return new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value));
@@ -318,6 +347,18 @@
     function formatInteger(value) {
       if (value == null || Number.isNaN(Number(value))) return '—';
       return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Number(value));
+    }
+
+    function formatSignedInteger(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      return `${n > 0 ? '+' : n < 0 ? '-' : ''}${formatInteger(Math.abs(n))}`;
+    }
+
+    function compactDateLabel(value) {
+      const s = String(value || '').replace(/\D/g, '');
+      if (s.length === 8) return `${s.slice(4, 6)}/${s.slice(6, 8)}`;
+      return String(value || '');
     }
 
     function formatCompactDate(value) {

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.dani.stock-dashboard-krx-short-selling-daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>/Users/dani/.openclaw/workspace/projects/stock-dashboard/scripts/refresh-krx-short-selling-daily.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>7</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/dani/.openclaw/workspace/projects/stock-dashboard/logs/launchd-krx-short-selling-daily.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/dani/.openclaw/workspace/projects/stock-dashboard/logs/launchd-krx-short-selling-daily.err.log</string>
+</dict>
+</plist>

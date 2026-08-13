@@ -52,6 +52,7 @@ try {
   const intradayShapes = await fetchIntradayShapes();
   const officialMarketNotices = await fetchKrxMarketOperationNotices({ timeoutMs });
   const marketVolumes = await fetchMarketVolumes(results, generatedAt);
+  const krxShortSellingDaily = await readKrxShortSellingDaily(generatedAt);
   const officialMarketSafetyEvents = extractKoreaMarketSafetyEvents(officialMarketNotices.notices, new Date(generatedAt));
   const rawMarketSignals = buildMarketSignals(results, fxLevels, investorFlows, generatedAt, intradayShapes);
   const optionPositionSignal = await buildOptionPositionChangeSignal(putCallRatio, results, generatedAt);
@@ -65,6 +66,7 @@ try {
     investorFlows,
     putCallRatio,
     marketVolumes,
+    krxShortSellingDaily,
     intradayShapes,
     officialMarketNotices,
     officialMarketSafetyEvents,
@@ -126,7 +128,12 @@ async function writeJsonAtomic(file, payload) {
 
 async function fetchWithFallback(metric) {
   const primary = await fetchMetric(metric);
-  if (primary.status?.level !== 'error' || !metric.fallback) return primary;
+  const primaryLevel = primary.status?.level;
+  const shouldTryFallback = metric.fallback && (
+    primaryLevel === 'error' ||
+    (metric.fallbackOnWarn === true && primaryLevel === 'warn')
+  );
+  if (!shouldTryFallback) return primary;
 
   const fallbackMetric = {
     ...metric,
@@ -139,11 +146,13 @@ async function fetchWithFallback(metric) {
     primarySymbol: metric.symbol
   };
   const fallback = await fetchMetric(fallbackMetric);
+  if (primaryLevel === 'warn' && fallback.status?.level !== 'ok') return primary;
   if (fallback.status?.level === 'error') {
     fallback.primaryError = primary.status?.message || 'primary failed';
     return fallback;
   }
 
+  const primaryProblem = primaryLevel === 'error' ? 'primary failed' : 'primary warning';
   return {
     ...fallback,
     provider: fallback.provider,
@@ -153,7 +162,7 @@ async function fetchWithFallback(metric) {
       level: fallback.status.level === 'ok' ? 'warn' : fallback.status.level,
       icon: fallback.status.level === 'ok' ? '🟡' : fallback.status.icon,
       label: fallback.status.level === 'ok' ? '대체소스' : fallback.status.label,
-      message: `primary failed (${primary.status?.message}); using fallback ${fallback.provider}:${fallback.symbol}`
+      message: `${primaryProblem} (${primary.status?.message}); using fallback ${fallback.provider}:${fallback.symbol}`
     }
   };
 }
@@ -376,6 +385,24 @@ async function fetchFxLevels(results) {
     }
   }
   return out;
+}
+
+async function readKrxShortSellingDaily(generatedAt) {
+  try {
+    const payload = JSON.parse(await fs.readFile(path.join(root, 'data/krx-short-selling-daily.json'), 'utf8'));
+    return {
+      ...payload,
+      embeddedAt: generatedAt
+    };
+  } catch (err) {
+    return {
+      id: 'krx_short_selling_daily',
+      status: 'not_ready',
+      generatedAt,
+      message: 'KRX short-selling daily cache is not ready yet. Run npm run krx:short:refresh after KRX data sync.',
+      items: []
+    };
+  }
 }
 
 async function fetchInvestorFlows() {
