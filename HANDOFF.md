@@ -423,3 +423,116 @@ Dani's morning-priority feedback has been implemented in `scripts/fetch-all.mjs`
 - Auth env expected: `KRX_OPENAPI_AUTH_KEY` (fallbacks: `KRX_AUTH_KEY`, `KRX_DATA_AUTH_KEY`).
 - Current state without key: script writes `data/kospi200-pcr-krx-eod.json` with `status=blocked_missing_auth_key` and exits 0.
 - Once Dani provides KRX OpenAPI AUTH_KEY, run `npm run krx:pcr:eod -- --basDd YYYYMMDD` and inspect field mapping/sample rows before trusting reconciliation.
+
+## 2026-08-22 Phase 6A — KIS Program Trading Data Source Direction
+
+Dani provided the intended solution path for program-trading indicators. Treat this as the working plan for indicator #3, and do not make KRX internal endpoint discovery a blocker.
+
+Goal: collect KOSPI program-trading flows split by investor class and arbitrage/non-arbitrage, then later use them as a 10-minute Market State Engine feature. Do not connect this to production scoring or dashboard UI until raw responses, field names, units, and market-hours behavior are verified.
+
+Preferred source order:
+
+1. KIS REST `investor-program-trade-today`
+   - Path: `/uapi/domestic-stock/v1/quotations/investor-program-trade-today`
+   - TR_ID: `HHPPG046600C1`
+   - Param: `MRKT_DIV_CLS_CODE=1` for KOSPI; `4` for KOSDAQ if later needed.
+   - Purpose: KOSPI same-day investor-class program-trading flow.
+   - Important fields to verify from live raw response before coding assumptions:
+     - `invr_cls_code`, `invr_cls_name`
+     - `all_seln_amt`, `all_shnu_amt`, `all_ntby_amt`
+     - `arbt_seln_amt`, `arbt_shnu_amt`, `arbt_ntby_amt`
+     - `nabt_seln_amt`, `nabt_shnu_amt`, `nabt_ntby_amt`
+     - matching `*_qty` fields if present.
+   - Key feature candidate: foreign non-arbitrage net buy and 10-minute impulse.
+
+2. KIS REST `comp-program-trade-today`
+   - Path: `/uapi/domestic-stock/v1/quotations/comp-program-trade-today`
+   - TR_ID: `FHPPG04600101`
+   - Params: `FID_COND_MRKT_DIV_CODE=J`, `FID_MRKT_CLS_CODE=K` for KOSPI.
+   - Purpose: market-wide program-trading time/total flow.
+   - Official docs reportedly expose only recent ~30 minutes intraday, which is acceptable because the dashboard can store its own 10-minute snapshots.
+
+3. Later optional KIS WebSocket
+   - TR_ID: `H0UPPGM0`
+   - Purpose: real-time domestic index program-trading feed with arbitrage/non-arbitrage already split.
+   - Defer until REST probes run reliably for 2–4 weeks.
+
+Implementation constraints:
+
+- Reuse the existing KIS client/auth/token/rate-limit/retry structure. Do not create a parallel KIS auth implementation.
+- First add a separate probe script only. Do not change `scripts/fetch-all.mjs`, dashboard UI, alerts, or scoring in the first probe phase.
+- Never log credentials, tokens, cookies, account numbers, or secrets.
+- Do not guess field names; inspect live raw response keys first.
+- Verify units against raw response / HTS-style interpretation before displaying. Do not assume `amt` or `tr_pbmn` is already KRW, 억원, or 백만원.
+- API errors must not break the existing dashboard pipeline.
+- Preserve raw fields in a debug/sample payload while also proposing normalized schema.
+
+Suggested normalized schema:
+
+```json
+{
+  "programTrading": {
+    "source": "KIS",
+    "timestamp": "ISO string",
+    "market": {
+      "totalNetBuyAmount": null,
+      "arbitrageNetBuyAmount": null,
+      "nonArbitrageNetBuyAmount": null
+    },
+    "foreign": {
+      "totalNetBuyAmount": null,
+      "arbitrageNetBuyAmount": null,
+      "nonArbitrageNetBuyAmount": null
+    },
+    "institution": {
+      "totalNetBuyAmount": null,
+      "arbitrageNetBuyAmount": null,
+      "nonArbitrageNetBuyAmount": null
+    },
+    "stale": false,
+    "raw": {}
+  }
+}
+```
+
+Future derived features to design for, but not yet score:
+
+- `programNetImpulse10m`
+- `foreignProgramImpulse10m`
+- `foreignArbitrageImpulse10m`
+- `foreignNonArbitrageImpulse10m`
+- `foreignNonArbitrageAcceleration`
+- `institutionProgramImpulse10m`
+- `nonArbitrageShare`
+- `programAcceleration`
+
+Interpretation priority:
+
+- Foreign non-arbitrage program impulse is the highest-value directional feature.
+- Arbitrage program flow should be read together with KOSPI200 futures basis; do not treat arbitrage buy alone as pure risk-on.
+- Strongest future risk-on combination candidate: foreign KOSPI200 futures net buy + foreign non-arbitrage program buy acceleration + USD/KRW down + VKOSPI down + KOSPI200 up.
+- Weak internal-quality warning candidate: KOSPI200 up, foreign KOSPI200 futures sell, foreign non-arbitrage program sell, but arbitrage program buy supporting the index.
+
+KRX program-trading endpoint discovery:
+
+- Keep KRX as future official benchmark/cross-check, not as the implementation blocker.
+- If needed later, use browser Network capture on menu `MDC0201020305`; do not guess `MDCSTAT026xx` unless the captured request confirms it.
+- Redact cookies, JSESSIONID, authorization, account, password, and token values from any captured logs.
+
+## 2026-08-22 Korea Special Indicators Implemented
+
+Dani approved implementing all four proposed indicators. Current implementation:
+
+- `scripts/fetch-all.mjs` now writes `koreaSpecialIndicators` into `data/latest.json`.
+- `index.html` renders a bottom panel titled `한국 특수지표 / 시장 내부지표` before the short-selling panel.
+- Added cards:
+  - KOSPI200 futures basis: current KIS day futures minus Naver KOSPI200 spot, with 10-minute history feature scaffold.
+  - Market Breadth: Naver mobile KOSPI marketValue list, 10-minute cache, KOSPI advancing/declining/flat, A/D ratio, advance ratio, VWAP-above ratio; KOSPI market-cap top 200 is displayed as a temporary KOSPI200 proxy.
+  - Program trading: KIS REST investor + market program trading, 10-minute cache, foreign/institution total/arbitrage/non-arbitrage normalized fields, 10-minute/30-minute impulse feature scaffolds. Uses existing KIS `requestKis`; added sleeps to avoid KIS per-second throttling. Display assumes raw amount fields are 백만원 until HTS unit cross-check is completed.
+  - Samsung/SK Hynix relative strength: Naver mobile stock basic, 10-minute cache, stock changePct minus KOSPI200 changePct.
+- Latest gates passed: `npm run fetch`, `npm run check`, extracted inline `index.html` script `node --check`, and `npm run publish:supabase`.
+- Remaining upgrades:
+  - Replace top-200 proxy with exact KOSPI200 constituent universe.
+  - Add historical breadth cache/backfill for 20-day/52-week new high-low.
+  - Cross-check KIS program amount units against HTS before finalizing display unit.
+  - Consider KIS WebSocket `H0UPPGM0` only after REST data is stable for 2–4 weeks.

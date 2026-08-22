@@ -52,6 +52,7 @@ try {
   const intradayShapes = await fetchIntradayShapes();
   const officialMarketNotices = await fetchKrxMarketOperationNotices({ timeoutMs });
   const marketVolumes = await fetchMarketVolumes(results, generatedAt);
+  const koreaSpecialIndicators = await fetchKoreaSpecialIndicators(results, generatedAt);
   const krxShortSellingDaily = await readKrxShortSellingDaily(generatedAt);
   const officialMarketSafetyEvents = extractKoreaMarketSafetyEvents(officialMarketNotices.notices, new Date(generatedAt));
   const rawMarketSignals = buildMarketSignals(results, fxLevels, investorFlows, generatedAt, intradayShapes);
@@ -66,6 +67,7 @@ try {
     investorFlows,
     putCallRatio,
     marketVolumes,
+    koreaSpecialIndicators,
     krxShortSellingDaily,
     intradayShapes,
     officialMarketNotices,
@@ -456,6 +458,346 @@ async function fetchInvestorFlows() {
     }
   }
   return flows;
+}
+
+
+async function fetchKoreaSpecialIndicators(results, generatedAt) {
+  const base = {
+    id: 'korea_special_indicators',
+    generatedAt,
+    refreshPolicy: '10-minute cache for heavier breadth/program/relative-strength probes; basis is computed from current dashboard metrics',
+    basis: buildKospi200Basis(results, generatedAt),
+    breadth: await readOrRefreshTimedCache('korea-breadth-cache.json', 10 * 60, () => fetchKoreaBreadth(generatedAt)),
+    programTrading: await readOrRefreshTimedCache('kis-program-trading-cache.json', 10 * 60, () => fetchKisProgramTrading(generatedAt)),
+    relativeStrength: await readOrRefreshTimedCache('korea-relative-strength-cache.json', 10 * 60, () => fetchKoreaRelativeStrength(results, generatedAt))
+  };
+  return applyKoreaSpecialHistory(base, generatedAt);
+}
+
+function buildKospi200Basis(results, generatedAt) {
+  const spot = results.find(m => m.id === 'kospi200');
+  const future = results.find(m => m.id === 'kospi200_futures_kis');
+  const spotValue = numberOrNull(spot?.value);
+  const futureValue = numberOrNull(future?.value);
+  const basis = spotValue !== null && futureValue !== null ? futureValue - spotValue : null;
+  return {
+    id: 'kospi200_basis',
+    label: 'KOSPI200 선물 Basis',
+    status: basis === null ? 'warn' : 'ok',
+    message: basis === null ? 'KOSPI200 spot/futures value unavailable' : 'KIS futures board - Naver KOSPI200 spot',
+    future: futureValue,
+    spot: spotValue,
+    basis,
+    basisPct: basis !== null && spotValue ? (basis / spotValue) * 100 : null,
+    futureChangePct: numberOrNull(future?.changePct),
+    spotChangePct: numberOrNull(spot?.changePct),
+    source: 'KIS kospi200 day futures + Naver KOSPI200 spot',
+    fetchedAt: generatedAt
+  };
+}
+
+async function fetchKoreaBreadth(generatedAt) {
+  const pages = [];
+  for (let page = 1; page <= 12; page += 1) {
+    try {
+      const url = `https://m.stock.naver.com/api/stocks/marketValue/KOSPI?page=${page}&pageSize=100`;
+      const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 stock-dashboard-breadth/0.1' }, signal: AbortSignal.timeout(Math.max(timeoutMs, 12000)) });
+      if (!res.ok) throw new Error(`Naver KOSPI breadth HTTP ${res.status}`);
+      const json = await res.json();
+      const stocks = Array.isArray(json.stocks) ? json.stocks : [];
+      if (!stocks.length) break;
+      pages.push(...stocks.map((stock, idx) => normalizeNaverStockListRow(stock, (page - 1) * 100 + idx + 1)));
+      await sleep(120);
+    } catch (err) {
+      if (!pages.length) return { id: 'korea_breadth', status: 'error', message: err.message, fetchedAt: generatedAt, source: 'Naver mobile KOSPI marketValue' };
+      break;
+    }
+  }
+  const valid = pages.filter(row => row.code && row.changePct !== null);
+  const top200 = valid.filter(row => row.rank <= 200);
+  const kospi = summarizeBreadthUniverse('KOSPI 전체', valid);
+  const kospi200Proxy = summarizeBreadthUniverse('KOSPI 시총상위 200 proxy', top200);
+  return {
+    id: 'korea_breadth',
+    status: valid.length ? 'ok' : 'warn',
+    source: 'Naver mobile KOSPI marketValue list',
+    fetchedAt: generatedAt,
+    universeCount: valid.length,
+    kospi,
+    kospi200Proxy,
+    highLow: {
+      status: 'warming_up',
+      label: '20일/52주 신고가-신저가 캐시 준비중',
+      message: '종목별 과거 일봉 백필이 필요해 별도 일/주기 캐시로 붙일 예정. 현재 패널은 상승/하락과 VWAP 위 비율을 먼저 표시.'
+    },
+    note: 'KOSPI200 정확 구성종목 endpoint 확정 전까지 시총상위 200을 proxy로 표시.'
+  };
+}
+
+function normalizeNaverStockListRow(stock, rank) {
+  const price = parseKrxNumber(stock.closePrice);
+  const volume = parseKrxNumber(stock.accumulatedTradingVolume);
+  const valueMillionKrw = parseKrxNumber(stock.accumulatedTradingValue);
+  const vwap = price !== null && volume && valueMillionKrw !== null ? (valueMillionKrw * 1_000_000) / volume : null;
+  return {
+    rank,
+    code: stock.itemCode || stock.reutersCode || null,
+    name: stock.stockName || null,
+    price,
+    changePct: numberOrNull(stock.fluctuationsRatio),
+    direction: stock.compareToPreviousPrice?.name || stock.compareToPreviousPrice?.text || null,
+    volume,
+    valueMillionKrw,
+    vwap,
+    aboveVwap: price !== null && vwap !== null ? price > vwap : null,
+    localTradedAt: stock.localTradedAt || null
+  };
+}
+
+function summarizeBreadthUniverse(label, rows) {
+  const up = rows.filter(r => r.changePct > 0).length;
+  const down = rows.filter(r => r.changePct < 0).length;
+  const flat = rows.filter(r => r.changePct === 0).length;
+  const vwapRows = rows.filter(r => r.aboveVwap !== null);
+  const aboveVwap = vwapRows.filter(r => r.aboveVwap).length;
+  return {
+    label,
+    count: rows.length,
+    advancing: up,
+    declining: down,
+    flat,
+    advanceRatioPct: rows.length ? (up / rows.length) * 100 : null,
+    advanceDecline: down ? up / down : (up ? Infinity : null),
+    aboveVwap,
+    vwapCount: vwapRows.length,
+    aboveVwapRatioPct: vwapRows.length ? (aboveVwap / vwapRows.length) * 100 : null
+  };
+}
+
+async function fetchKoreaRelativeStrength(results, generatedAt) {
+  const kospi200 = results.find(m => m.id === 'kospi200');
+  const benchmarkPct = numberOrNull(kospi200?.changePct);
+  const targets = [
+    { id: 'samsung_electronics_rs', name: '삼성전자', code: '005930' },
+    { id: 'sk_hynix_rs', name: 'SK하이닉스', code: '000660' }
+  ];
+  const items = [];
+  for (const target of targets) {
+    try {
+      const url = `https://m.stock.naver.com/api/stock/${target.code}/basic`;
+      const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 stock-dashboard-relative-strength/0.1' }, signal: AbortSignal.timeout(timeoutMs) });
+      if (!res.ok) throw new Error(`Naver stock basic HTTP ${res.status}`);
+      const json = await res.json();
+      const stockPct = numberOrNull(json.fluctuationsRatio);
+      items.push({
+        ...target,
+        price: parseKrxNumber(json.closePrice),
+        change: parseKrxNumber(json.compareToPreviousClosePrice),
+        changePct: stockPct,
+        benchmark: 'KOSPI200',
+        benchmarkChangePct: benchmarkPct,
+        relativeStrengthPctp: stockPct !== null && benchmarkPct !== null ? stockPct - benchmarkPct : null,
+        source: 'Naver mobile stock basic + dashboard KOSPI200',
+        timestamp: json.localTradedAt || generatedAt,
+        status: stockPct === null || benchmarkPct === null ? 'warn' : 'ok'
+      });
+      await sleep(120);
+    } catch (err) {
+      items.push({ ...target, status: 'error', message: err.message, fetchedAt: generatedAt });
+    }
+  }
+  return { id: 'korea_relative_strength', status: items.some(x => x.status === 'ok') ? 'ok' : 'warn', fetchedAt: generatedAt, items };
+}
+
+async function fetchKisProgramTrading(generatedAt) {
+  // The main 1-minute batch may already have called several KIS quotation TRs.
+  // Keep program trading on a 10-minute cache and pause before/among TRs to avoid KIS per-second throttling.
+  await sleep(2200);
+  const investor = await fetchKisProgramInvestorRows();
+  await sleep(2200);
+  const market = await fetchKisProgramMarketRows();
+  const rows = Array.isArray(investor.rows) ? investor.rows : [];
+  const byName = name => rows.find(row => String(row.investorName || '').replace(/\s+/g, '').includes(name));
+  const foreign = byName('외국인') || null;
+  const institution = byName('기관') || rows.find(row => /기관|금융투자|투신|연기금/.test(String(row.investorName || '').replace(/\s+/g, ''))) || null;
+  const latestMarket = Array.isArray(market.rows) ? market.rows[0] : null;
+  return {
+    id: 'kis_program_trading',
+    status: investor.status === 'ok' || market.status === 'ok' ? 'ok' : 'warn',
+    source: 'KIS program trading REST',
+    fetchedAt: generatedAt,
+    amountUnit: 'KIS raw amount fields; display assumes 백만원 until HTS unit cross-check is completed',
+    investorRows: rows,
+    marketRows: market.rows || [],
+    normalized: {
+      market: latestMarket ? {
+        time: latestMarket.time,
+        totalNetBuyAmount: latestMarket.totalNetBuyAmount,
+        arbitrageNetBuyAmount: latestMarket.arbitrageNetBuyAmount,
+        nonArbitrageNetBuyAmount: latestMarket.nonArbitrageNetBuyAmount
+      } : null,
+      foreign: foreign ? pickProgramAmounts(foreign) : null,
+      institution: institution ? pickProgramAmounts(institution) : null
+    },
+    diagnostics: { investor: investor.diagnostics, market: market.diagnostics },
+    message: investor.message || market.message || null
+  };
+}
+
+async function fetchKisProgramInvestorRows() {
+  try {
+    const query = new URLSearchParams({ EXCH_DIV_CLS_CODE: 'J', MRKT_DIV_CLS_CODE: '1' }).toString();
+    const { json } = await requestKis({ path: '/uapi/domestic-stock/v1/quotations/investor-program-trade-today', trId: 'HHPPG046600C1', query }, process.env, { timeoutMs: Math.max(timeoutMs, 12000) });
+    const rawRows = Array.isArray(json.output1) ? json.output1 : [];
+    return {
+      status: json.rt_cd === '0' ? 'ok' : 'warn',
+      rows: rawRows.map(normalizeKisProgramInvestorRow),
+      diagnostics: { topKeys: Object.keys(json), rowCount: rawRows.length, sampleKeys: Object.keys(rawRows[0] || {}) },
+      message: json.rt_cd === '0' ? null : json.msg1 || 'KIS investor program warning'
+    };
+  } catch (err) {
+    return { status: 'error', rows: [], diagnostics: {}, message: err.name === 'AbortError' ? 'KIS investor program timeout' : err.message };
+  }
+}
+
+async function fetchKisProgramMarketRows() {
+  try {
+    const query = new URLSearchParams({
+      FID_COND_MRKT_DIV_CODE: 'J',
+      FID_MRKT_CLS_CODE: 'K',
+      FID_SCTN_CLS_CODE: '',
+      FID_INPUT_ISCD: '',
+      FID_COND_MRKT_DIV_CODE1: '',
+      FID_INPUT_HOUR_1: ''
+    }).toString();
+    const { json } = await requestKis({ path: '/uapi/domestic-stock/v1/quotations/comp-program-trade-today', trId: 'FHPPG04600101', query }, process.env, { timeoutMs: Math.max(timeoutMs, 12000) });
+    const rawRows = Array.isArray(json.output) ? json.output : [];
+    return {
+      status: json.rt_cd === '0' ? 'ok' : 'warn',
+      rows: rawRows.map(normalizeKisProgramMarketRow),
+      diagnostics: { topKeys: Object.keys(json), rowCount: rawRows.length, sampleKeys: Object.keys(rawRows[0] || {}) },
+      message: json.rt_cd === '0' ? null : json.msg1 || 'KIS market program warning'
+    };
+  } catch (err) {
+    return { status: 'error', rows: [], diagnostics: {}, message: err.name === 'AbortError' ? 'KIS market program timeout' : err.message };
+  }
+}
+
+function normalizeKisProgramInvestorRow(row) {
+  return {
+    investorCode: row.invr_cls_code || null,
+    investorName: row.invr_cls_name || null,
+    totalSellAmount: numberOrNull(row.all_seln_amt),
+    totalBuyAmount: numberOrNull(row.all_shnu_amt),
+    totalNetBuyAmount: numberOrNull(row.all_ntby_amt),
+    arbitrageSellAmount: numberOrNull(row.arbt_seln_amt),
+    arbitrageBuyAmount: numberOrNull(row.arbt_shnu_amt),
+    arbitrageNetBuyAmount: numberOrNull(row.arbt_ntby_amt),
+    nonArbitrageSellAmount: numberOrNull(row.nabt_seln_amt),
+    nonArbitrageBuyAmount: numberOrNull(row.nabt_shnu_amt),
+    nonArbitrageNetBuyAmount: numberOrNull(row.nabt_ntby_amt),
+    totalNetBuyQty: numberOrNull(row.all_ntby_qty),
+    arbitrageNetBuyQty: numberOrNull(row.arbt_ntby_qty),
+    nonArbitrageNetBuyQty: numberOrNull(row.nabt_ntby_qty),
+    raw: row
+  };
+}
+
+function normalizeKisProgramMarketRow(row) {
+  return {
+    time: formatKisTime(row.bsop_hour),
+    rawTime: row.bsop_hour || null,
+    totalNetBuyAmount: numberOrNull(row.whol_smtn_ntby_tr_pbmn),
+    arbitrageSellAmount: numberOrNull(row.arbt_smtn_seln_tr_pbmn),
+    arbitrageBuyAmount: numberOrNull(row.arbt_smtn_shnu_tr_pbmn),
+    arbitrageNetBuyAmount: numberOrNull(row.arbt_smtn_ntby_tr_pbmn),
+    nonArbitrageSellAmount: numberOrNull(row.nabt_smtn_seln_tr_pbmn),
+    nonArbitrageBuyAmount: numberOrNull(row.nabt_smtn_shnu_tr_pbmn),
+    nonArbitrageNetBuyAmount: numberOrNull(row.nabt_smtn_ntby_tr_pbmn),
+    indexValue: numberOrNull(row.bstp_nmix_prpr),
+    indexChange: numberOrNull(row.bstp_nmix_prdy_vrss),
+    raw: row
+  };
+}
+
+function pickProgramAmounts(row) {
+  return {
+    investorName: row.investorName,
+    totalNetBuyAmount: row.totalNetBuyAmount,
+    arbitrageNetBuyAmount: row.arbitrageNetBuyAmount,
+    nonArbitrageNetBuyAmount: row.nonArbitrageNetBuyAmount
+  };
+}
+
+function formatKisTime(value) {
+  const s = String(value || '').padStart(6, '0');
+  if (!/^\d{6}$/.test(s)) return value || null;
+  return `${s.slice(0, 2)}:${s.slice(2, 4)}:${s.slice(4, 6)}`;
+}
+
+async function readOrRefreshTimedCache(filename, ttlSeconds, producer) {
+  const file = path.join(root, 'data', filename);
+  try {
+    const cached = JSON.parse(await fs.readFile(file, 'utf8'));
+    const age = cached?.fetchedAt ? (Date.now() - new Date(cached.fetchedAt).getTime()) / 1000 : Infinity;
+    if (age >= 0 && age < ttlSeconds) return { ...cached, cacheAgeSeconds: Math.round(age), cachePolicySeconds: ttlSeconds };
+  } catch (err) {
+    if (err.code !== 'ENOENT') console.warn(`cache read failed ${filename}: ${err.message}`);
+  }
+  const fresh = await producer();
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await writeJsonAtomic(file, fresh);
+  return { ...fresh, cacheAgeSeconds: 0, cachePolicySeconds: ttlSeconds };
+}
+
+async function applyKoreaSpecialHistory(payload, generatedAt) {
+  const file = path.join(root, 'data/korea-special-history.json');
+  let history = { snapshots: [] };
+  try { history = JSON.parse(await fs.readFile(file, 'utf8')); } catch (err) { if (err.code !== 'ENOENT') throw err; }
+  const snapshot = {
+    generatedAt,
+    basis: payload.basis?.basis ?? null,
+    foreignProgram: payload.programTrading?.normalized?.foreign?.totalNetBuyAmount ?? null,
+    foreignArbitrage: payload.programTrading?.normalized?.foreign?.arbitrageNetBuyAmount ?? null,
+    foreignNonArbitrage: payload.programTrading?.normalized?.foreign?.nonArbitrageNetBuyAmount ?? null,
+    institutionProgram: payload.programTrading?.normalized?.institution?.totalNetBuyAmount ?? null,
+    marketProgram: payload.programTrading?.normalized?.market?.totalNetBuyAmount ?? null,
+    samsungRs: payload.relativeStrength?.items?.find(x => x.code === '005930')?.relativeStrengthPctp ?? null,
+    hynixRs: payload.relativeStrength?.items?.find(x => x.code === '000660')?.relativeStrengthPctp ?? null
+  };
+  const snapshots = Array.isArray(history.snapshots) ? history.snapshots : [];
+  const last = snapshots[snapshots.length - 1];
+  if (!last || Math.abs(new Date(generatedAt) - new Date(last.generatedAt)) >= 9 * 60 * 1000) snapshots.push(snapshot);
+  const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+  history.snapshots = snapshots.filter(s => new Date(s.generatedAt).getTime() >= cutoff).slice(-500);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await writeJsonAtomic(file, history);
+
+  const previous10 = findSnapshotAtLeastMinutesAgo(history.snapshots, generatedAt, 10);
+  const previous30 = findSnapshotAtLeastMinutesAgo(history.snapshots, generatedAt, 30);
+  return {
+    ...payload,
+    features: {
+      basisImpulse10m: diffOrNull(snapshot.basis, previous10?.basis),
+      programNetImpulse10m: diffOrNull(snapshot.marketProgram, previous10?.marketProgram),
+      foreignProgramImpulse10m: diffOrNull(snapshot.foreignProgram, previous10?.foreignProgram),
+      foreignProgramImpulse30m: diffOrNull(snapshot.foreignProgram, previous30?.foreignProgram),
+      foreignArbitrageImpulse10m: diffOrNull(snapshot.foreignArbitrage, previous10?.foreignArbitrage),
+      foreignNonArbitrageImpulse10m: diffOrNull(snapshot.foreignNonArbitrage, previous10?.foreignNonArbitrage),
+      foreignNonArbitrageAcceleration: diffOrNull(
+        diffOrNull(snapshot.foreignNonArbitrage, previous10?.foreignNonArbitrage),
+        diffOrNull(previous10?.foreignNonArbitrage, previous30?.foreignNonArbitrage)
+      ),
+      institutionProgramImpulse10m: diffOrNull(snapshot.institutionProgram, previous10?.institutionProgram),
+      samsungRelativeStrengthImpulse10m: diffOrNull(snapshot.samsungRs, previous10?.samsungRs),
+      hynixRelativeStrengthImpulse10m: diffOrNull(snapshot.hynixRs, previous10?.hynixRs)
+    }
+  };
+}
+
+function findSnapshotAtLeastMinutesAgo(snapshots, generatedAt, minutes) {
+  const target = new Date(generatedAt).getTime() - minutes * 60 * 1000;
+  return [...(snapshots || [])].reverse().find(s => new Date(s.generatedAt).getTime() <= target) || null;
 }
 
 async function fetchKospi200PutCallRatio(generatedAt) {

@@ -226,7 +226,7 @@
       renderTodayIssues(data, eventData);
       const groups = groupBy(data.metrics, x => x.group || 'Other');
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
-      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${shortSellingPanel(data.krxShortSellingDaily)}`;
+      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${shortSellingPanel(data.krxShortSellingDaily)}`;
       setTimeout(load, (data.refreshSeconds || 60) * 1000);
     }
 
@@ -276,6 +276,69 @@
         ? `거래대금 PCR ${amount} · ${expiry.phase === 'expiry_week' ? '만기주라 전일비 급변을 더 크게 봄' : expiry.phase === 'expiry_day_window' ? '만기 임박: 청산/롤오버 영향이 큼' : '만기 전 포지션 축적 구간'}`
         : '대표 누적 포지션 소스를 붙이기 전까지 숫자를 보여주지 않습니다.';
       return `<section class="volumePanel" id="pcr-panel"><div class="volumeHead"><div><h2 class="volumeTitle">KOSPI200 옵션 EOD 풋콜 상태</h2><div class="volumeSub">${escapeHtml(eodMeta)} · ${escapeHtml(pcr.quality === 'OFFICIAL_EOD' ? 'KRX 공식 일별매매정보' : '검증 중')}</div></div><div class="eventsMeta">${escapeHtml(pcr.basis || '')}</div></div><div class="volumeGrid">${interpretationBox}<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">거래량 PCR</div><div class="meta">당일 반응: 전체 누적 풋 거래량 ÷ 콜 거래량</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(canUseValues ? (state.label || pcr.status) : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(volumeMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(volumeX100)}<br>${escapeHtml(volumeNote)}</div></div><div><div class="volumePct">${escapeHtml(volumeDelta)}p</div><div class="meta">전일비</div></div></div><div class="note info">${escapeHtml(canUseValues ? (state.guidance || '') : 'ATM 주변 표본값은 진단용으로만 저장하고 대표 PCR로 표시하지 않음')}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">3D MA</div><div class="volumeTickValue">${escapeHtml(ma3)}</div></div><div class="volumeTick"><div class="volumeTickTime">5D MA</div><div class="volumeTickValue">${escapeHtml(ma5)}</div></div></div></article><article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">포지션 PCR</div><div class="meta">잔존 포지션: 전체 미결제약정 풋 ÷ 콜</div></div><span class="volumeBadge warn">${escapeHtml(canUseValues ? 'EOD 포지션' : '표시보류')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(oiMain)}</div><div class="volumeSub">HTS식 ×100: ${escapeHtml(oiX100)}<br>${escapeHtml(oiNote)}</div></div><div><div class="volumePct">${escapeHtml(oiDelta)}p</div><div class="meta">전일비</div></div></div><div class="note info">${escapeHtml(positionNote)}</div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">CALL OI</div><div class="volumeTickValue">${escapeHtml(callOi)}</div></div><div class="volumeTick"><div class="volumeTickTime">PUT OI</div><div class="volumeTickValue">${escapeHtml(putOi)}</div></div></div></article></div></section>`;
+    }
+
+
+    function koreaSpecialIndicatorsPanel(payload) {
+      if (!payload) return '';
+      const basis = payload.basis || {};
+      const breadth = payload.breadth || {};
+      const program = payload.programTrading || {};
+      const rs = payload.relativeStrength || {};
+      const features = payload.features || {};
+      const cards = [basisCard(basis, features), breadthCard(breadth), programTradingCard(program, features), relativeStrengthCard(rs, features)].filter(Boolean).join('');
+      return `<section class="volumePanel" id="korea-special-indicators"><div class="volumeHead"><div><h2 class="volumeTitle">한국 특수지표 / 시장 내부지표</h2><div class="volumeSub">Breadth · KOSPI200 Basis · 프로그램매매 · 삼성전자/SK하이닉스 상대강도</div></div><div class="eventsMeta">${escapeHtml(payload.refreshPolicy || '10분 캐시')}</div></div><div class="volumeGrid">${cards}</div></section>`;
+    }
+
+    function basisCard(basis, features) {
+      const basisValue = basis.basis == null ? '—' : formatSignedPoint(basis.basis, 2);
+      const basisPct = basis.basisPct == null ? '—' : `${formatSignedPoint(basis.basisPct, 2)}%`;
+      const impulse = features.basisImpulse10m == null ? '—' : formatSignedPoint(features.basisImpulse10m, 2);
+      const status = basis.status === 'ok' ? (basis.basis > 0 ? 'active' : basis.basis < 0 ? 'warn' : 'normal') : 'warn';
+      const tone = basis.basis == null ? '계산 대기' : basis.basis > 0 ? '선물 프리미엄' : basis.basis < 0 ? '선물 디스카운트' : '현·선 동일권';
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">KOSPI200 선물 Basis</div><div class="meta">선물 - 현물 · ${escapeHtml(basis.source || '')}</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(tone)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(basisValue)}</div><div class="volumeSub">선물 ${formatValue(basis.future, 2)} / 현물 ${formatValue(basis.spot, 2)} · ${escapeHtml(basisPct)}</div></div><div><div class="volumePct">${escapeHtml(impulse)}</div><div class="meta">10분 변화</div></div></div><div class="note info">가격 상승과 Basis 확대/축소를 같이 보면 차익성 수급인지 방향성 수급인지 구분하기 좋습니다.</div></article>`;
+    }
+
+    function breadthCard(breadth) {
+      const kospi = breadth.kospi || {};
+      const proxy = breadth.kospi200Proxy || {};
+      const ad = kospi.advanceDecline === Infinity ? '∞' : kospi.advanceDecline == null ? '—' : formatValue(kospi.advanceDecline, 2);
+      const advPct = kospi.advanceRatioPct == null ? '—' : `${formatValue(kospi.advanceRatioPct, 1)}%`;
+      const proxyPct = proxy.advanceRatioPct == null ? '—' : `${formatValue(proxy.advanceRatioPct, 1)}%`;
+      const vwapPct = kospi.aboveVwapRatioPct == null ? '—' : `${formatValue(kospi.aboveVwapRatioPct, 1)}%`;
+      const status = breadth.status === 'ok' ? (kospi.advanceRatioPct >= 60 ? 'active' : kospi.advanceRatioPct <= 40 ? 'warn' : 'normal') : 'warn';
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">시장 Breadth</div><div class="meta">${escapeHtml(breadth.source || 'Naver KOSPI list')} · ${formatInteger(breadth.universeCount)}종목</div></div><span class="volumeBadge ${escapeAttr(status)}">A/D ${escapeHtml(ad)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(advPct)}</div><div class="volumeSub">상승 ${formatInteger(kospi.advancing)} / 하락 ${formatInteger(kospi.declining)} / 보합 ${formatInteger(kospi.flat)}</div></div><div><div class="volumePct">${escapeHtml(vwapPct)}</div><div class="meta">VWAP 위</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">KOSPI200 proxy</div><div class="volumeTickValue">${escapeHtml(proxyPct)} 상승</div></div><div class="volumeTick"><div class="volumeTickTime">신고가/신저가</div><div class="volumeTickValue">${escapeHtml(breadth.highLow?.label || '준비중')}</div></div></div>${breadth.note ? `<div class="note info">${escapeHtml(breadth.note)}</div>` : ''}</article>`;
+    }
+
+    function programTradingCard(program, features) {
+      const norm = program.normalized || {};
+      const foreign = norm.foreign || {};
+      const market = norm.market || {};
+      const foreignNonArb = foreign.nonArbitrageNetBuyAmount;
+      const impulse = features.foreignNonArbitrageImpulse10m;
+      const accel = features.foreignNonArbitrageAcceleration;
+      const status = program.status === 'ok' ? (foreignNonArb > 0 ? 'active' : foreignNonArb < 0 ? 'warn' : 'normal') : 'warn';
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">프로그램매매</div><div class="meta">KIS 투자자별 + 시장 종합 · 단위 검증중</div></div><span class="volumeBadge ${escapeAttr(status)}">외국인 비차익</span></div><div class="volumeMain"><div><div class="volumeValue">${formatProgramAmount(foreignNonArb)}</div><div class="volumeSub">외국인 전체 ${formatProgramAmount(foreign.totalNetBuyAmount)} · 차익 ${formatProgramAmount(foreign.arbitrageNetBuyAmount)}</div></div><div><div class="volumePct">${formatProgramAmount(impulse)}</div><div class="meta">10분 impulse</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">시장 전체</div><div class="volumeTickValue">${formatProgramAmount(market.totalNetBuyAmount)}</div></div><div class="volumeTick"><div class="volumeTickTime">가속도</div><div class="volumeTickValue">${formatProgramAmount(accel)}</div></div></div>${program.message ? `<div class="note error">${escapeHtml(program.message)}</div>` : `<div class="note info">외국인 비차익 프로그램 흐름을 핵심 방향성 후보로 저장합니다. 아직 스코어에는 연결하지 않았습니다.</div>`}</article>`;
+    }
+
+    function relativeStrengthCard(rs, features) {
+      const items = Array.isArray(rs.items) ? rs.items : [];
+      if (!items.length) return '';
+      const rows = items.map(item => {
+        const impulse = item.code === '005930' ? features.samsungRelativeStrengthImpulse10m : features.hynixRelativeStrengthImpulse10m;
+        return `<div class="volumeTick"><div class="volumeTickTime">${escapeHtml(item.name)}</div><div class="volumeTickValue">RS ${formatSignedPoint(item.relativeStrengthPctp, 2)}p · 10분 ${formatSignedPoint(impulse, 2)}p</div></div>`;
+      }).join('');
+      const leader = [...items].filter(x => Number.isFinite(Number(x.relativeStrengthPctp))).sort((a,b)=>b.relativeStrengthPctp-a.relativeStrengthPctp)[0];
+      const status = leader?.relativeStrengthPctp > 0 ? 'active' : leader?.relativeStrengthPctp < 0 ? 'warn' : 'normal';
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">삼성전자 · SK하이닉스 상대강도</div><div class="meta">종목 등락률 - KOSPI200 등락률</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(leader?.name || '확인')}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(leader ? formatSignedPoint(leader.relativeStrengthPctp, 2) + 'p' : '—')}</div><div class="volumeSub">KOSPI200 대비 장중 리더/래거드 확인</div></div><div><div class="volumePct">10분</div><div class="meta">캐시</div></div></div><div class="volumeTicks">${rows}</div></article>`;
+    }
+
+    function formatProgramAmount(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      const eok = n / 100;
+      const sign = eok > 0 ? '+' : eok < 0 ? '-' : '';
+      return `${sign}${formatValue(Math.abs(eok), Math.abs(eok) >= 100 ? 0 : 1)}억`;
     }
 
     function shortSellingPanel(shortData) {
