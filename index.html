@@ -301,13 +301,19 @@
 
     function breadthCard(breadth) {
       const kospi = breadth.kospi || {};
-      const proxy = breadth.kospi200Proxy || {};
+      const k200 = breadth.kospi200 || breadth.kospi200Proxy || {};
+      const highLow = breadth.highLow?.universes || {};
+      const kospiHighLow = highLow.kospi || {};
+      const k200HighLow = highLow.kospi200 || {};
       const ad = kospi.advanceDecline === Infinity ? '∞' : kospi.advanceDecline == null ? '—' : formatValue(kospi.advanceDecline, 2);
       const advPct = kospi.advanceRatioPct == null ? '—' : `${formatValue(kospi.advanceRatioPct, 1)}%`;
-      const proxyPct = proxy.advanceRatioPct == null ? '—' : `${formatValue(proxy.advanceRatioPct, 1)}%`;
-      const vwapPct = kospi.aboveVwapRatioPct == null ? '—' : `${formatValue(kospi.aboveVwapRatioPct, 1)}%`;
+      const k200Pct = k200.advanceRatioPct == null ? '—' : `${formatValue(k200.advanceRatioPct, 1)}%`;
+      const spread = kospi.adSpread == null ? '—' : formatSignedInteger(kospi.adSpread);
       const status = breadth.status === 'ok' ? (kospi.advanceRatioPct >= 60 ? 'active' : kospi.advanceRatioPct <= 40 ? 'warn' : 'normal') : 'warn';
-      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">시장 Breadth</div><div class="meta">${escapeHtml(breadth.source || 'Naver KOSPI list')} · ${formatInteger(breadth.universeCount)}종목</div></div><span class="volumeBadge ${escapeAttr(status)}">A/D ${escapeHtml(ad)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(advPct)}</div><div class="volumeSub">상승 ${formatInteger(kospi.advancing)} / 하락 ${formatInteger(kospi.declining)} / 보합 ${formatInteger(kospi.flat)}</div></div><div><div class="volumePct">${escapeHtml(vwapPct)}</div><div class="meta">VWAP 위</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">KOSPI200 proxy</div><div class="volumeTickValue">${escapeHtml(proxyPct)} 상승</div></div><div class="volumeTick"><div class="volumeTickTime">신고가/신저가</div><div class="volumeTickValue">${escapeHtml(breadth.highLow?.label || '준비중')}</div></div></div>${breadth.note ? `<div class="note info">${escapeHtml(breadth.note)}</div>` : ''}</article>`;
+      const sourceLabel = kospi.source || breadth.source || 'KIS breadth';
+      const highLowLabel = `H/L ${formatInteger(kospiHighLow.newHighPressureCount)} / ${formatInteger(kospiHighLow.newLowPressureCount)}`;
+      const capNote = kospiHighLow.highCapped || kospiHighLow.lowCapped || k200HighLow.highCapped || k200HighLow.lowCapped ? ' · 30건 cap 가능' : '';
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">시장 Breadth</div><div class="meta">${escapeHtml(sourceLabel)} · KOSPI ${formatInteger(kospi.count)}종목</div></div><span class="volumeBadge ${escapeAttr(status)}">A/D ${escapeHtml(ad)}</span></div><div class="volumeMain"><div><div class="volumeValue">${escapeHtml(advPct)}</div><div class="volumeSub">상승 ${formatInteger(kospi.advancing)} / 하락 ${formatInteger(kospi.declining)} / 보합 ${formatInteger(kospi.flat)} · AD ${escapeHtml(spread)}</div></div><div><div class="volumePct">${escapeHtml(k200Pct)}</div><div class="meta">KOSPI200</div></div></div><div class="volumeTicks"><div class="volumeTick"><div class="volumeTickTime">KOSPI200 내부</div><div class="volumeTickValue">상승 ${formatInteger(k200.advancing)} / 하락 ${formatInteger(k200.declining)}</div></div><div class="volumeTick"><div class="volumeTickTime">New H/L Pressure</div><div class="volumeTickValue">${escapeHtml(highLowLabel)}${escapeHtml(capNote)}</div></div></div>${breadth.note ? `<div class="note info">${escapeHtml(breadth.note)}</div>` : ''}${breadth.highLow?.limitations ? `<div class="note info">${escapeHtml(breadth.highLow.limitations)}</div>` : ''}</article>`;
     }
 
     function programTradingCard(program, features) {

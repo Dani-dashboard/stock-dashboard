@@ -532,7 +532,34 @@ Dani approved implementing all four proposed indicators. Current implementation:
   - Samsung/SK Hynix relative strength: Naver mobile stock basic, 10-minute cache, stock changePct minus KOSPI200 changePct.
 - Latest gates passed: `npm run fetch`, `npm run check`, extracted inline `index.html` script `node --check`, and `npm run publish:supabase`.
 - Remaining upgrades:
-  - Replace top-200 proxy with exact KOSPI200 constituent universe.
-  - Add historical breadth cache/backfill for 20-day/52-week new high-low.
+  - Breadth primary source was upgraded after this note: use KIS `inquire-index-category-price` for KOSPI/KOSPI200 official advancing/declining/flat counts, not Naver top-200 proxy.
+  - Add historical breadth cache/backfill for EOD 20-day/52-week exact high-low counts later; do not calculate this intraday by repeatedly scanning all stocks.
   - Cross-check KIS program amount units against HTS before finalizing display unit.
   - Consider KIS WebSocket `H0UPPGM0` only after REST data is stable for 2–4 weeks.
+
+## 2026-08-22 Breadth Source Upgraded to KIS Category Counts
+
+Dani identified a better architecture: separate intraday breadth from medium-term breadth. Intraday breadth should use KIS aggregate counts; 20D/52W exact counts should be EOD/bulk-cache work later.
+
+Implemented:
+
+- Primary intraday Breadth source is now KIS `inquire-index-category-price`.
+  - Path: `/uapi/domestic-stock/v1/quotations/inquire-index-category-price`
+  - TR_ID: `FHPUP02140000`
+  - KOSPI verified params: `FID_COND_MRKT_DIV_CODE=U`, `FID_INPUT_ISCD=0001`, `FID_COND_SCR_DIV_CODE=20214`, `FID_MRKT_CLS_CODE=K`, `FID_BLNG_CLS_CODE=0`.
+  - KOSPI200 verified params: same but `FID_INPUT_ISCD=2001`, `FID_MRKT_CLS_CODE=K2`.
+  - Verified fields: `ascn_issu_cnt`, `down_issu_cnt`, `stnr_issu_cnt`, `uplm_issu_cnt`, `lslm_issu_cnt`.
+- Derived fields: `advanceRatioPct`, `advanceDecline`, `adSpread`.
+- KIS `near-new-highlow` is added as New High/Low Pressure only, not exact 20D/52W count.
+  - Path: `/uapi/domestic-stock/v1/ranking/near-new-highlow`
+  - TR_ID: `FHPST01870000`
+  - Required runtime params include `FID_COND_MRKT_DIV_CODE=J`, `FID_COND_SCR_DIV_CODE=20187`, `FID_INPUT_CNT_1=30`, `FID_INPUT_CNT_2=30`, `FID_APLY_RANG_PRC_1=0`, `FID_APLY_RANG_PRC_2=999999999`, `FID_APLY_RANG_VOL=0`.
+  - KOSPI/KOSPI200 high/low calls returned `rt_cd=0` with 0 rows at the tested time; keep 30-row `capped` flags.
+- Naver marketValue scan remains only as fallback/proxy if KIS breadth fails.
+- UI Breadth card now shows KIS Advance Ratio, AD Spread, KOSPI200 internal breadth, and New H/L Pressure.
+
+Latest verified sample:
+
+- KOSPI: 193 up / 683 down / 28 flat; Advance Ratio 22.0%; AD Spread -490.
+- KOSPI200: 55 up / 141 down / 3 flat; Advance Ratio 28.1%; AD Spread -86.
+- New High/Low Pressure: 0/0 for both KOSPI and KOSPI200 at tested time.

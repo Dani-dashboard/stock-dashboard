@@ -497,6 +497,172 @@ function buildKospi200Basis(results, generatedAt) {
 }
 
 async function fetchKoreaBreadth(generatedAt) {
+  await sleep(2200);
+  const kospi = await fetchKisIndexBreadth({
+    id: 'kospi',
+    label: 'KOSPI',
+    params: { FID_COND_MRKT_DIV_CODE: 'U', FID_INPUT_ISCD: '0001', FID_COND_SCR_DIV_CODE: '20214', FID_MRKT_CLS_CODE: 'K', FID_BLNG_CLS_CODE: '0' }
+  });
+  await sleep(2200);
+  const kospi200 = await fetchKisIndexBreadth({
+    id: 'kospi200',
+    label: 'KOSPI200',
+    params: { FID_COND_MRKT_DIV_CODE: 'U', FID_INPUT_ISCD: '2001', FID_COND_SCR_DIV_CODE: '20214', FID_MRKT_CLS_CODE: 'K2', FID_BLNG_CLS_CODE: '0' }
+  });
+  await sleep(2200);
+  const highLow = await fetchKisNewHighLowPressure(generatedAt);
+
+  const fallback = kospi.status === 'ok' && kospi200.status === 'ok'
+    ? null
+    : await fetchNaverBreadthFallback(generatedAt);
+
+  return {
+    id: 'korea_breadth',
+    status: kospi.status === 'ok' || kospi200.status === 'ok' ? 'ok' : (fallback?.status || 'warn'),
+    source: 'KIS inquire-index-category-price + KIS near-new-highlow; Naver list fallback for VWAP/proxy only',
+    fetchedAt: generatedAt,
+    kospi: kospi.status === 'ok' ? kospi : fallback?.kospi || kospi,
+    kospi200: kospi200.status === 'ok' ? kospi200 : null,
+    kospi200Proxy: fallback?.kospi200Proxy || null,
+    intraday: {
+      primary: 'KIS_UP_DOWN_COUNTS',
+      message: '장중 Breadth 본체는 KIS 업종 현재가의 상승/하락/보합 종목 수. 신고가/신저가는 pressure 보조지표로만 사용.'
+    },
+    highLow,
+    fallback,
+    note: kospi200.status === 'ok'
+      ? 'KOSPI/KOSPI200 상승·하락·보합 종목 수는 KIS 공식 업종 현재가 API 기준.'
+      : 'KIS KOSPI200 breadth 실패 시 Naver 시총상위 200 proxy를 임시 참고.'
+  };
+}
+
+async function fetchKisIndexBreadth(target) {
+  try {
+    const { json } = await requestKis({
+      path: '/uapi/domestic-stock/v1/quotations/inquire-index-category-price',
+      trId: 'FHPUP02140000',
+      query: new URLSearchParams(target.params).toString()
+    }, process.env, { timeoutMs: Math.max(timeoutMs, 12000) });
+    const row = json.output1 || {};
+    const advancing = numberOrNull(row.ascn_issu_cnt);
+    const declining = numberOrNull(row.down_issu_cnt);
+    const flat = numberOrNull(row.stnr_issu_cnt);
+    if (advancing === null || declining === null) throw new Error(json.msg1 || 'KIS breadth missing up/down counts');
+    const count = advancing + declining + (flat || 0);
+    return {
+      id: target.id,
+      label: target.label,
+      status: 'ok',
+      count,
+      advancing,
+      declining,
+      flat,
+      limitUp: numberOrNull(row.uplm_issu_cnt),
+      limitDown: numberOrNull(row.lslm_issu_cnt),
+      advanceRatioPct: advancing + declining ? (advancing / (advancing + declining)) * 100 : null,
+      advanceDecline: declining ? advancing / declining : (advancing ? Infinity : null),
+      adSpread: advancing - declining,
+      indexValue: numberOrNull(row.bstp_nmix_prpr),
+      indexChange: numberOrNull(row.bstp_nmix_prdy_vrss),
+      indexChangePct: numberOrNull(row.bstp_nmix_prdy_ctrt),
+      volume: numberOrNull(row.acml_vol),
+      tradingValue: numberOrNull(row.acml_tr_pbmn),
+      yearHigh: numberOrNull(row.dryy_bstp_nmix_hgpr),
+      yearHighDate: row.dryy_bstp_nmix_hgpr_date || null,
+      yearLow: numberOrNull(row.dryy_bstp_nmix_lwpr),
+      yearLowDate: row.dryy_bstp_nmix_lwpr_date || null,
+      source: 'KIS inquire-index-category-price',
+      diagnostics: { topKeys: Object.keys(json), output1Keys: Object.keys(row) }
+    };
+  } catch (err) {
+    return { id: target.id, label: target.label, status: 'error', message: err.name === 'AbortError' ? 'KIS breadth timeout' : err.message, source: 'KIS inquire-index-category-price' };
+  }
+}
+
+async function fetchKisNewHighLowPressure(generatedAt) {
+  const universes = [
+    { key: 'kospi', label: 'KOSPI', inputIscd: '0001' },
+    { key: 'kospi200', label: 'KOSPI200', inputIscd: '2001' }
+  ];
+  const result = { status: 'ok', source: 'KIS near-new-highlow', fetchedAt: generatedAt, universes: {}, limitations: 'KIS ranking API does not confirm 20D/52W period; treat as New High/Low Pressure, not exact new-high/new-low count.' };
+  for (const universe of universes) {
+    await sleep(1800);
+    const high = await fetchKisNearHighLowRows(universe, '0');
+    await sleep(1800);
+    const low = await fetchKisNearHighLowRows(universe, '1');
+    result.universes[universe.key] = {
+      label: universe.label,
+      high,
+      low,
+      newHighPressureCount: Array.isArray(high.items) ? high.items.length : null,
+      newLowPressureCount: Array.isArray(low.items) ? low.items.length : null,
+      highCapped: Array.isArray(high.items) ? high.items.length >= 30 : false,
+      lowCapped: Array.isArray(low.items) ? low.items.length >= 30 : false,
+      pressureBalance: Array.isArray(high.items) && Array.isArray(low.items) ? high.items.length - low.items.length : null
+    };
+    if (high.status !== 'ok' || low.status !== 'ok') result.status = 'warn';
+  }
+  return result;
+}
+
+async function fetchKisNearHighLowRows(universe, priceClass) {
+  try {
+    const params = {
+      FID_COND_MRKT_DIV_CODE: 'J',
+      FID_COND_SCR_DIV_CODE: '20187',
+      FID_INPUT_ISCD: universe.inputIscd,
+      FID_PRC_CLS_CODE: priceClass,
+      FID_DIV_CLS_CODE: '0',
+      FID_BLNG_CLS_CODE: '0',
+      FID_TRGT_CLS_CODE: '0',
+      FID_TRGT_EXLS_CLS_CODE: '0',
+      FID_INPUT_PRICE_1: '',
+      FID_INPUT_PRICE_2: '',
+      FID_VOL_CNT: '',
+      FID_INPUT_DATE_1: '',
+      FID_INPUT_CNT_1: '30',
+      FID_INPUT_CNT_2: '30',
+      FID_APLY_RANG_PRC_1: '0',
+      FID_APLY_RANG_PRC_2: '999999999',
+      FID_APLY_RANG_VOL: '0'
+    };
+    const { json } = await requestKis({
+      path: '/uapi/domestic-stock/v1/ranking/near-new-highlow',
+      trId: 'FHPST01870000',
+      query: new URLSearchParams(params).toString()
+    }, process.env, { timeoutMs: Math.max(timeoutMs, 12000) });
+    const rows = Array.isArray(json.output) ? json.output : [];
+    return {
+      status: json.rt_cd === '0' ? 'ok' : 'warn',
+      type: priceClass === '0' ? 'near_high' : 'near_low',
+      count: rows.length,
+      capped: rows.length >= 30,
+      items: rows.map(normalizeKisNearHighLowRow).filter(Boolean),
+      diagnostics: { topKeys: Object.keys(json), sampleKeys: Object.keys(rows[0] || {}) },
+      message: json.rt_cd === '0' ? null : json.msg1 || 'KIS near high/low warning'
+    };
+  } catch (err) {
+    return { status: 'error', type: priceClass === '0' ? 'near_high' : 'near_low', count: null, capped: false, items: [], message: err.name === 'AbortError' ? 'KIS near high/low timeout' : err.message };
+  }
+}
+
+function normalizeKisNearHighLowRow(row) {
+  const code = row.mksc_shrn_iscd || row.stck_shrn_iscd || row.stck_code || null;
+  const name = row.hts_kor_isnm || row.stck_kor_isnm || null;
+  if (!code && !name) return null;
+  return {
+    code,
+    name,
+    price: numberOrNull(row.stck_prpr),
+    newHigh: numberOrNull(row.new_hgpr),
+    highNearRate: numberOrNull(row.hprc_near_rate),
+    newLow: numberOrNull(row.new_lwpr),
+    lowNearRate: numberOrNull(row.lwpr_near_rate),
+    raw: row
+  };
+}
+
+async function fetchNaverBreadthFallback(generatedAt) {
   const pages = [];
   for (let page = 1; page <= 12; page += 1) {
     try {
@@ -509,28 +675,20 @@ async function fetchKoreaBreadth(generatedAt) {
       pages.push(...stocks.map((stock, idx) => normalizeNaverStockListRow(stock, (page - 1) * 100 + idx + 1)));
       await sleep(120);
     } catch (err) {
-      if (!pages.length) return { id: 'korea_breadth', status: 'error', message: err.message, fetchedAt: generatedAt, source: 'Naver mobile KOSPI marketValue' };
+      if (!pages.length) return { id: 'naver_breadth_fallback', status: 'error', message: err.message, fetchedAt: generatedAt, source: 'Naver mobile KOSPI marketValue' };
       break;
     }
   }
   const valid = pages.filter(row => row.code && row.changePct !== null);
   const top200 = valid.filter(row => row.rank <= 200);
-  const kospi = summarizeBreadthUniverse('KOSPI 전체', valid);
-  const kospi200Proxy = summarizeBreadthUniverse('KOSPI 시총상위 200 proxy', top200);
   return {
-    id: 'korea_breadth',
+    id: 'naver_breadth_fallback',
     status: valid.length ? 'ok' : 'warn',
     source: 'Naver mobile KOSPI marketValue list',
     fetchedAt: generatedAt,
     universeCount: valid.length,
-    kospi,
-    kospi200Proxy,
-    highLow: {
-      status: 'warming_up',
-      label: '20일/52주 신고가-신저가 캐시 준비중',
-      message: '종목별 과거 일봉 백필이 필요해 별도 일/주기 캐시로 붙일 예정. 현재 패널은 상승/하락과 VWAP 위 비율을 먼저 표시.'
-    },
-    note: 'KOSPI200 정확 구성종목 endpoint 확정 전까지 시총상위 200을 proxy로 표시.'
+    kospi: summarizeBreadthUniverse('KOSPI 전체 (Naver fallback)', valid),
+    kospi200Proxy: summarizeBreadthUniverse('KOSPI 시총상위 200 proxy', top200)
   };
 }
 
@@ -568,6 +726,7 @@ function summarizeBreadthUniverse(label, rows) {
     flat,
     advanceRatioPct: rows.length ? (up / rows.length) * 100 : null,
     advanceDecline: down ? up / down : (up ? Infinity : null),
+    adSpread: up - down,
     aboveVwap,
     vwapCount: vwapRows.length,
     aboveVwapRatioPct: vwapRows.length ? (aboveVwap / vwapRows.length) * 100 : null
