@@ -41,6 +41,7 @@ for (const file of files) {
     throw err;
   }
 
+  body = outputBodyForFile(file.local, body);
   assertJson(body, file.local);
   const url = `${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${file.remote.split('/').map(encodeURIComponent).join('/')}`;
   const res = await fetch(url, {
@@ -72,6 +73,20 @@ function trimTrailingSlash(value) {
 function normalizePrefix(value) {
   const clean = value.replace(/^\/+|\/+$/g, '');
   return clean ? `${clean}/` : '';
+}
+
+function outputBodyForFile(local, body) {
+  if (local !== 'data/market-state-10m.json') return body;
+  if (isKoreaMarketIntelligenceWindow()) return body;
+  return Buffer.from('{}\n', 'utf8');
+}
+
+function isKoreaMarketIntelligenceWindow(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
+  const hour = Number(parts.find(p => p.type === 'hour')?.value || 0);
+  const minute = Number(parts.find(p => p.type === 'minute')?.value || 0);
+  const minutes = hour * 60 + minute;
+  return minutes >= 9 * 60 && minutes < 16 * 60;
 }
 
 function assertJson(buffer, label) {
