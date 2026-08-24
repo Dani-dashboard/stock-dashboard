@@ -15,3 +15,5 @@ data/kis-master/
 data/kis-token-cache.json
 tmp/
 prototype-backups/
+
+data/.fetch-all.lock/
