@@ -17,7 +17,8 @@ const publicBaseUrl = `${supabaseUrl}/storage/v1/object/public/${encodeURICompon
 const files = [
   { local: 'data/latest.json', remote: `${prefix}latest.json`, required: true },
   { local: 'data/events.json', remote: `${prefix}events.json`, required: true },
-  { local: 'data/alerts-latest.json', remote: `${prefix}alerts-latest.json`, required: false }
+  { local: 'data/alerts-latest.json', remote: `${prefix}alerts-latest.json`, required: false },
+  { local: 'data/market-state-10m.json', remote: `${prefix}market-state-10m.json`, required: false }
 ];
 
 if (!enabled) {

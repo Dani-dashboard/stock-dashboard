@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "storage": {
+    "kind": "sqlite",
+    "path": "data/market-intelligence.sqlite",
+    "journalMode": "WAL",
+    "busyTimeoutMs": 5000,
+    "retentionDays": {
+      "observations": 180,
+      "features10m": 180,
+      "marketState10m": 365,
+      "hourlyContext": 365,
+      "hourlyAiInsight": 365,
+      "hourlyForecastEvaluation": 365
+    }
+  },
+  "engine": {
+    "timezone": "Asia/Seoul",
+    "featureIntervalMinutes": 10,
+    "featureWindowsMinutes": [10, 30, 60],
+    "normalizationTradingDays": 60,
+    "normalizationMinSamples": 20,
+    "sameTimeBucketMinutes": 10,
+    "sameTimeMinSamples": 10
+  },
+  "schemas": {
+    "observation": "market_observations",
+    "features10m": "market_features_10m",
+    "marketState10m": "market_state_10m",
+    "hourlyContext": "hourly_context",
+    "hourlyAiInsight": "hourly_ai_insight",
+    "hourlyForecastEvaluation": "hourly_forecast_evaluation"
+  },
+  "scoring": {
+    "qualityFactors": {
+      "ok": 1,
+      "limited": 0.45,
+      "warn": 0.25,
+      "closed": 0.35,
+      "error": 0
+    },
+    "scoreUnits": {
+      "pricePctMove": 0.35,
+      "fxPctMove": 0.25,
+      "volPctMove": 2,
+      "flowImpulseBillionKrw": 300,
+      "breadthRatioPct": 12,
+      "basisPct": 0.3,
+      "zScore": 1.5
+    },
+    "clusters": {
+      "direction": [
+        { "id": "kospi200", "weight": 1.4, "kind": "riskAsset" },
+        { "id": "kospi", "weight": 1.1, "kind": "riskAsset" },
+        { "id": "kospi200_futures_kis", "weight": 1.5, "kind": "riskAsset" },
+        { "id": "kosdaq", "weight": 0.5, "kind": "riskAsset" },
+        { "id": "special.kospi200_basis.pct", "weight": 0.5, "kind": "basis" },
+        { "id": "global_risk_cluster", "weight": 0.8, "kind": "cluster", "members": ["spx_f", "nasdaq_f", "sox", "ewy"] }
+      ],
+      "flow": [
+        { "id": "flow.kospi200_futures.foreign.net_buy", "weight": 1.5, "kind": "cumulativeFlow" },
+        { "id": "flow.kospi_cash.foreign.net_buy", "weight": 1.2, "kind": "cumulativeFlow" },
+        { "id": "program.foreign.non_arbitrage_net_buy_amount", "weight": 1.2, "kind": "programFlow" },
+        { "id": "program.foreign.total_net_buy_amount", "weight": 0.8, "kind": "programFlow" },
+        { "id": "program.institution.total_net_buy_amount", "weight": 0.5, "kind": "programFlow" }
+      ],
+      "stress": [
+        { "id": "vix", "weight": 1.2, "kind": "stressUp" },
+        { "id": "ksvkospi", "weight": 1.5, "kind": "stressUp" },
+        { "id": "usdkrw", "weight": 1.2, "kind": "stressUp" },
+        { "id": "jpykrw_100", "weight": 0.5, "kind": "stressUp" },
+        { "id": "dxy", "weight": 0.7, "kind": "stressUp" },
+        { "id": "us_high_yield_spread", "weight": 0.8, "kind": "stressUp" },
+        { "id": "breadth.kospi.advance_ratio_pct", "weight": 0.8, "kind": "breadthStressInverse" }
+      ],
+      "breadth": [
+        { "id": "breadth.kospi.advance_ratio_pct", "weight": 1.4, "kind": "breadthRatio" },
+        { "id": "breadth.kospi200.advance_ratio_pct", "weight": 1.3, "kind": "breadthRatio" },
+        { "id": "breadth.kospi.ad_spread", "weight": 0.5, "kind": "breadthSpread" },
+        { "id": "breadth.kospi200.ad_spread", "weight": 0.5, "kind": "breadthSpread" }
+      ]
+    },
+    "regimeThresholds": {
+      "strongRiskOn": 55,
+      "riskOn": 25,
+      "fragileBand": 20,
+      "riskOff": -25,
+      "strongRiskOff": -55,
+      "stress": 65,
+      "lowConfidence": 35
+    },
+    "riskBudget": {
+      "aggressiveRiskOn": 5,
+      "riskOn": 4,
+      "neutral": 3,
+      "riskOff": 2,
+      "defensive": 1
+    }
+  },
+  "notes": [
+    "Do not change data/latest.json contract. Market Intelligence outputs must remain sidecar payloads.",
+    "Initial scoring weights are heuristic only. Do not tune them aggressively before enough market_state_10m history exists.",
+    "LLM/GPT must not calculate these scores or override deterministic CPU regime."
+  ]
+}

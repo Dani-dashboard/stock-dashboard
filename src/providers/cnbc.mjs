@@ -118,7 +118,7 @@ function isCnbcWeekendClose(metric, quote) {
 function isCmeCommodityQuote(metric, quote) {
   return metric?.group === 'Commodity'
     && /New York Mercantile Exchange|NYMEX|Commodities Exchange Centre|COMEX/i.test(quote?.exchange || '')
-    && /^\/(CL|GC)/i.test(quote?.providerSymbol || '');
+    && (/^\/(CL|GC)/i.test(quote?.providerSymbol || '') || /^@(CL|GC)\.1$/i.test(metric?.symbol || ''));
 }
 
 function isCmeCommodityWeekendClose(metric, quote) {
@@ -162,7 +162,40 @@ export async function fetchCnbcQuoteMetric(metric, { timeoutMs = 8000, staleSeco
     if (!res.ok) throw new Error(`CNBC HTTP ${res.status}`);
     const json = await res.json();
     const quote = json?.QuickQuoteResult?.QuickQuote?.[0];
-    if (!quote || quote.last === undefined || quote.last === '') throw new Error('CNBC quote missing last value');
+    if (!quote) throw new Error('CNBC quote missing last value');
+    if (quote.last === undefined || quote.last === '') {
+      const missingLastClosed = /CLOS/i.test(quote.curmktstatus || '') || /CLOS/i.test(quote.mainmktstatus || '') || isCnbcWeekendClose(metric, quote);
+      if (!missingLastClosed) throw new Error('CNBC quote missing last value');
+      const tsDate = parseCnbcQuoteTime(quote);
+      const ageSeconds = tsDate ? Math.max(0, Math.round((Date.now() - tsDate.getTime()) / 1000)) : null;
+      return {
+        id: metric.id,
+        name: metric.name,
+        group: metric.group,
+        groupOrder: metric.groupOrder,
+        groupLabel: metric.groupLabel,
+        groupDescription: metric.groupDescription,
+        provider: 'cnbc',
+        symbol: metric.symbol,
+        unit: metric.unit || '',
+        decimals: metric.decimals,
+        displayNote: metric.displayNote || null,
+        value: null,
+        change: normalizeValue(quote.change, metric.scale ?? 1),
+        changePct: normalizeValue(quote.change_pct, 1),
+        timestamp: tsDate ? tsDate.toISOString() : null,
+        fetchedAt: new Date().toISOString(),
+        status: closedStatus({
+          marketState: marketStatus(quote),
+          ageSeconds,
+          message: `CNBC closed-market quote missing last value; ${quote.name || quote.shortName || metric.name}; ${quote.exchange || 'CNBC'}`
+        }),
+        delayNote: metric.delayNote || null,
+        sourceUrl: url,
+        rawName: quote.name || quote.shortName || null,
+        providerSymbol: quote.providerSymbol || null
+      };
+    }
 
     const value = normalizeValue(quote.last, metric.scale ?? 1);
     if (value === null) throw new Error(`CNBC quote has non-numeric last value: ${quote.last}`);

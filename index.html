@@ -28,6 +28,23 @@
     .issueText { margin-top:5px; color:var(--muted); font-size:11.5px; line-height:1.42; }
     .issueMeta { margin-top:8px; display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
     .eventsPanel { border:1px solid rgba(56,189,248,.20); background:rgba(17,28,51,.72); border-radius:18px; padding:14px; margin:2px 0 18px; }
+    .miPanel { border:1px solid rgba(99,102,241,.32); background:linear-gradient(135deg,rgba(30,41,59,.86),rgba(30,27,75,.68)); border-radius:20px; padding:14px; margin:0 0 14px; box-shadow:0 14px 40px rgba(0,0,0,.16); }
+    .miHead { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:11px; }
+    .miKicker { color:#c4b5fd; font-size:11px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; margin-bottom:5px; }
+    .miTitle { margin:0; font-size:18px; letter-spacing:-.04em; color:#ede9fe; }
+    .miRegime { display:inline-flex; align-items:center; gap:7px; border:1px solid rgba(196,181,253,.26); background:rgba(15,23,42,.52); color:#f5f3ff; border-radius:999px; padding:6px 10px; font-size:12px; font-weight:850; white-space:nowrap; }
+    .miRegime.risk_on, .miRegime.strong_risk_on { color:#bbf7d0; border-color:rgba(34,197,94,.35); background:rgba(20,83,45,.18); }
+    .miRegime.fragile_risk_on, .miRegime.fragile_risk_off { color:#fde68a; border-color:rgba(245,158,11,.36); background:rgba(120,53,15,.18); }
+    .miRegime.risk_off, .miRegime.stress { color:#fecaca; border-color:rgba(239,68,68,.38); background:rgba(127,29,29,.20); }
+    .miScoreGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:8px; }
+    .miScore { border:1px solid rgba(148,163,184,.16); background:rgba(15,23,42,.50); border-radius:14px; padding:10px; }
+    .miScoreName { color:#cbd5e1; font-size:11px; font-weight:800; }
+    .miScoreValue { margin-top:5px; font-size:22px; font-weight:900; letter-spacing:-.045em; }
+    .miScoreDelta { margin-top:2px; color:var(--muted); font-size:10.5px; }
+    .miDrivers { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px; margin-top:9px; }
+    .miDriver { border:1px solid rgba(148,163,184,.14); background:rgba(15,23,42,.42); border-radius:13px; padding:9px; color:var(--muted); font-size:11.5px; line-height:1.42; }
+    .miDriver strong { color:#e5e7eb; }
+    .miNote { margin-top:9px; color:var(--muted); font-size:11.5px; line-height:1.45; }
     .eventsHead { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; }
     .eventsTitle { margin:0; font-size:16px; color:#bae6fd; letter-spacing:-.03em; }
     .eventsMeta { color:var(--muted); font-size:11px; line-height:1.35; text-align:right; }
@@ -143,6 +160,14 @@
       .issueStack { grid-template-columns:1fr; gap:7px; }
       .issueCard { padding:9px; }
       .eventsPanel { padding:12px; margin-bottom:12px; border-radius:16px; }
+      .miPanel { padding:12px; margin-bottom:10px; border-radius:17px; }
+      .miHead { display:block; margin-bottom:9px; }
+      .miTitle { font-size:16px; }
+      .miRegime { margin-top:8px; }
+      .miScoreGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+      .miScore { padding:9px; }
+      .miScoreValue { font-size:20px; }
+      .miDrivers { grid-template-columns:1fr; gap:7px; }
       .eventsHead { margin-bottom:8px; }
       .eventsTitle { font-size:14px; }
       .eventsMeta { font-size:10px; }
@@ -206,12 +231,13 @@
     function formatValue(value, decimals) { if (value == null) return '—'; if (Number.isInteger(decimals)) return new Intl.NumberFormat('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value); return defaultFmt.format(value); }
     async function load() {
       try {
-        const [marketRes, eventData] = await Promise.all([
+        const [marketRes, eventData, marketState] = await Promise.all([
           fetch(dataUrl('latest.json')),
-          loadEvents()
+          loadEvents(),
+          loadMarketState()
         ]);
         if (!marketRes.ok) throw new Error('latest.json 로드 실패');
-        render(await marketRes.json(), eventData);
+        render(await marketRes.json(), eventData, marketState);
       }
       catch (err) { document.getElementById('summary').innerHTML = '<span class="pill">데이터 로드 오류</span>'; document.getElementById('content').innerHTML = `<div class="notice">${err.message}</div>`; }
     }
@@ -219,15 +245,64 @@
       try { const res = await fetch(dataUrl('events.json')); return res.ok ? await res.json() : { events: [], sourceNote:'events.json 없음' }; }
       catch { return { events: [], sourceNote:'events.json 로드 실패' }; }
     }
-    function render(data, eventData) {
+    async function loadMarketState() {
+      try { const res = await fetch(dataUrl('market-state-10m.json')); return res.ok ? await res.json() : null; }
+      catch { return null; }
+    }
+    function render(data, eventData, marketState) {
       window.__latestMetrics = Array.isArray(data.metrics) ? data.metrics : [];
       document.getElementById('summary').innerHTML = `<span class="pill">생성 ${timeAgo(data.generatedAt)}</span><span class="pill">정상 ${data.summary.ok}</span><span class="pill">확인 ${data.summary.warn}</span><span class="pill">장종료 ${data.summary.closed}</span><span class="pill">오류 ${data.summary.error}</span>`;
       document.getElementById('mobileHero').innerHTML = `<div class="mobileHeroTitle">모바일 빠른 현황 · 카드를 누르면 상세 지표로 이동</div><div class="mobileHeroStats"><span>정상 ${data.summary.ok}</span><span>확인 ${data.summary.warn}</span><span>장종료 ${data.summary.closed}</span><span>오류 ${data.summary.error}</span></div>`;
       renderTodayIssues(data, eventData);
       const groups = groupBy(data.metrics, x => x.group || 'Other');
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
-      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${shortSellingPanel(data.krxShortSellingDaily)}`;
+      document.getElementById('content').innerHTML = `${marketIntelligencePanel(marketState)}<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${shortSellingPanel(data.krxShortSellingDaily)}`;
       setTimeout(load, (data.refreshSeconds || 60) * 1000);
+    }
+
+    function marketIntelligencePanel(state) {
+      if (!state || !state.scores) return '';
+      const scores = state.scores || {};
+      const quality = state.dataQuality || {};
+      const regime = String(state.regime || 'NEUTRAL');
+      const regimeCls = regime.toLowerCase();
+      const risk = state.riskBudget == null ? '—' : `${state.riskBudget}/5`;
+      const confidence = scores.confidence == null ? '—' : `${formatValue(scores.confidence, 1)}%`;
+      const generated = state.timestamp ? new Date(state.timestamp).toLocaleString('ko-KR', { timeZone:'Asia/Seoul', hour12:false }) : '시간 미정';
+      const qCounts = quality.qualityCounts || {};
+      const warningText = Array.isArray(state.warnings) && state.warnings.length
+        ? `경고 ${state.warnings.map(w => w.code || w.message || '확인').join(', ')}`
+        : '경고 없음';
+      const scoreCards = [
+        ['Direction', scores.direction, scores.directionDelta10m, '가격 방향'],
+        ['Flow', scores.flow, scores.flowDelta10m, '수급/프로그램'],
+        ['Stress', scores.stress, scores.stressDelta10m, '환율·변동성'],
+        ['Breadth', scores.breadth, scores.breadthDelta10m, '시장 내부'],
+        ['Risk Budget', state.riskBudget, null, '1 방어 ~ 5 공격'],
+        ['Confidence', scores.confidence, null, `ok ${qCounts.ok || 0} · warn ${qCounts.warn || 0} · limited ${qCounts.limited || 0}`]
+      ].map(([name, value, delta, note]) => marketIntelligenceScore(name, value, delta, note)).join('');
+      const positive = Array.isArray(state.positiveDrivers) ? state.positiveDrivers.slice(0, 1) : [];
+      const negative = Array.isArray(state.negativeDrivers) ? state.negativeDrivers.slice(0, 1) : [];
+      const drivers = [
+        ...positive.map(d => marketIntelligenceDriver(d, '우호')),
+        ...negative.map(d => marketIntelligenceDriver(d, '부담'))
+      ].join('');
+      return `<section class="miPanel" id="market-intelligence"><div class="miHead"><div><div class="miKicker">MARKET INTELLIGENCE · 10M CPU</div><h2 class="miTitle">시장 상태 요약</h2><div class="todayLine">AI 없이 로컬 DB 숫자로만 계산 · ${escapeHtml(generated)} KST 버킷</div></div><div class="miRegime ${escapeAttr(regimeCls)}">${escapeHtml(regime)} · Risk ${escapeHtml(risk)} · 신뢰도 ${escapeHtml(confidence)}</div></div><div class="miScoreGrid">${scoreCards}</div>${drivers ? `<div class="miDrivers">${drivers}</div>` : ''}<div class="miNote">${escapeHtml(warningText)} · feature ${formatInteger(quality.featureCount || 0)}개 · 점수는 판단 보조용이며, 원천 숫자는 각 카드와 DB에 별도 보존됩니다.</div></section>`;
+    }
+
+    function marketIntelligenceScore(name, value, delta, note) {
+      const valueLabel = value == null ? '—' : name === 'Confidence' ? `${formatValue(value, 1)}%` : name === 'Risk Budget' ? `${formatValue(value, 0)}` : formatValue(value, 2);
+      const deltaLabel = delta == null ? escapeHtml(note || '') : `${escapeHtml(note || '')} · 10분 ${formatSignedPoint(delta, 2)}`;
+      const cls = Number(value) > 0 ? 'pos' : Number(value) < 0 ? 'neg' : '';
+      return `<article class="miScore"><div class="miScoreName">${escapeHtml(name)}</div><div class="miScoreValue ${cls}">${escapeHtml(valueLabel)}</div><div class="miScoreDelta">${deltaLabel}</div></article>`;
+    }
+
+    function marketIntelligenceDriver(driver, label) {
+      const id = driver.id || driver.cluster || 'driver';
+      const impact = driver.impact == null ? '—' : formatSignedPoint(driver.impact, 1);
+      const level = driver.level == null ? '' : ` · level ${formatValue(driver.level, 2)}`;
+      const delta = driver.delta10m == null ? '' : ` · 10분 ${formatSignedPoint(driver.delta10m, 2)}`;
+      return `<div class="miDriver"><strong>${escapeHtml(label)} · ${escapeHtml(id)}</strong><br>impact ${escapeHtml(impact)}${escapeHtml(level)}${escapeHtml(delta)} · ${escapeHtml(driver.cluster || '')}</div>`;
     }
 
     function marketVolumePanel(volumeData) {

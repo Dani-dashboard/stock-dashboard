@@ -7,13 +7,18 @@
     "symbol": ".DXY",
     "unit": "pt",
     "staleSeconds": 86400,
-    "delayNote": "CNBC ICE U.S. Dollar Index quote 기준. CNBC가 날짜 단위 timestamp만 제공할 수 있어 일중 실시간성은 상태 메시지로 확인.",
+    "delayNote": "CNBC ICE U.S. Dollar Index quote 기준. CNBC가 간헐적으로 값 누락 응답을 줄 수 있어 Yahoo DX-Y.NYB를 자동 대체소스로 둠.",
+    "fallback": {
+      "provider": "yahoo",
+      "symbol": "DX-Y.NYB",
+      "staleSeconds": 1800
+    },
     "groupOrder": 10,
     "groupLabel": "환율 / 달러 유동성",
     "groupDescription": "달러인덱스와 주요 원화 환율",
     "metricOrder": 10,
     "decimals": 2,
-    "displayNote": "달러인덱스는 소수점 둘째 자리까지 표시. Yahoo DX-Y.NYB가 40시간 이상 stale해 CNBC .DXY를 1차 소스로 사용."
+    "displayNote": "달러인덱스는 소수점 둘째 자리까지 표시. CNBC .DXY를 1차 소스로 쓰되 값 누락 시 Yahoo DX-Y.NYB spot 값을 대체 참조."
   },
   {
     "id": "usdkrw",
@@ -193,6 +198,7 @@
       "symbol": "KR10Y",
       "staleSeconds": 86400
     },
+    "fallbackOnWarn": true,
     "metricOrder": 13,
     "groupOrder": 40,
     "groupLabel": "금리 / 채권",
@@ -215,6 +221,7 @@
       "symbol": "JP10Y",
       "staleSeconds": 86400
     },
+    "fallbackOnWarn": true,
     "metricOrder": 14,
     "groupOrder": 40,
     "groupLabel": "금리 / 채권",
@@ -482,18 +489,6 @@
     "groupLabel": "KIS 연결 / 한국 특수지표",
     "groupDescription": "KIS API 연결 및 국내선물·채권·변동성 확장 영역",
     "metricOrder": 40
-  },
-  {
-    "id": "kis_placeholder",
-    "name": "KIS 연결 테스트",
-    "group": "KIS",
-    "provider": "kis",
-    "symbol": "ENV_CONFIGURED",
-    "unit": "",
-    "groupOrder": 90,
-    "groupLabel": "KIS 연결 / 한국 특수지표",
-    "groupDescription": "KIS API 연결 및 국내선물·채권 확장 영역",
-    "metricOrder": 50
   },
   {
     "id": "kospi200_futures_kis",

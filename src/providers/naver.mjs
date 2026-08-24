@@ -24,6 +24,12 @@ function isLocalWeekendOrPreOpen(metric, ageSeconds, staleSeconds) {
   return false;
 }
 
+function isNaverFxWeekendClosed(ageSeconds, staleSeconds) {
+  if (ageSeconds === null || ageSeconds <= staleSeconds) return false;
+  const p = marketParts('Asia/Seoul');
+  return p.weekday === 'Sat' || p.weekday === 'Sun';
+}
+
 export async function fetchNaverIndexMetric(metric, { timeoutMs = 8000, staleSeconds = 180 } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -222,8 +228,9 @@ export async function fetchNaverFxMetric(metric, { timeoutMs = 8000, staleSecond
     const marketStatus = info.marketStatus || info.stockExchangeType?.name || 'HANA';
     const ageSeconds = timestamp ? Math.round((Date.now() - new Date(timestamp).getTime()) / 1000) : null;
     const isClosed = ['CLOSE', 'CLOSED'].includes(String(marketStatus).toUpperCase());
-    const state = isClosed
-      ? closedStatus({ marketState: marketStatus, ageSeconds })
+    const isWeekendClosed = isNaverFxWeekendClosed(ageSeconds, staleSeconds);
+    const state = isClosed || isWeekendClosed
+      ? closedStatus({ marketState: isWeekendClosed ? 'WEEKEND_CLOSED' : marketStatus, ageSeconds })
       : ageSeconds !== null && ageSeconds > staleSeconds
         ? delayedStatus({ marketState: marketStatus, ageSeconds, message: `Naver/Hana FX quote is ${ageSeconds}s old` })
         : okStatus({ marketState: marketStatus, ageSeconds, message: `${info.description || '하나은행 고시환율'}; ${info.degreeCount ? `${info.degreeCount}회차` : ''}`.trim() });

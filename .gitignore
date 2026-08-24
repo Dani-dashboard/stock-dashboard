@@ -9,5 +9,9 @@ node_modules/
 logs/
 data/*.json
 data/*.jsonl
+data/*.sqlite
+data/*.sqlite-*
 data/kis-master/
 data/kis-token-cache.json
+tmp/
+prototype-backups/
