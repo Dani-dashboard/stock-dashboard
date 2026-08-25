@@ -275,7 +275,7 @@
       renderTodayIssues(data, eventData);
       const groups = groupBy(data.metrics, x => x.group || 'Other');
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
-      document.getElementById('content').innerHTML = `${hourlyInsightPanel(hourlyInsight)}${marketIntelligencePanel(marketState)}<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${shortSellingPanel(data.krxShortSellingDaily)}`;
+      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${hourlyInsightPanel(hourlyInsight)}${marketIntelligencePanel(marketState)}${shortSellingPanel(data.krxShortSellingDaily)}`;
       setTimeout(load, (data.refreshSeconds || 60) * 1000);
     }
 
