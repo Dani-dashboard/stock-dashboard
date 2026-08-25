@@ -233,6 +233,7 @@
   <main>
     <div class="notice">무료 소스가 실패하면 값을 숨기지 않고 상태로 표시합니다. 불확실한 숫자는 표시하지 않고 검증 대기로 둡니다.</div>
     <div id="todayIssues"></div>
+    <div id="hourlyInsightSlot"></div>
     <div class="toolbar"><button class="toolbtn" onclick="setAllGroups(true)">전체 펼치기</button><button class="toolbtn" onclick="setAllGroups(false)">전체 접기</button><button class="toolbtn" onclick="load()">새로고침</button></div>
     <div id="mobileHero" class="mobileHero"></div>
     <div id="content"></div>
@@ -254,7 +255,7 @@
         if (!marketRes.ok) throw new Error('latest.json 로드 실패');
         render(await marketRes.json(), eventData, marketState, hourlyInsight);
       }
-      catch (err) { document.getElementById('summary').innerHTML = '<span class="pill">데이터 로드 오류</span>'; document.getElementById('content').innerHTML = `<div class="notice">${err.message}</div>`; }
+      catch (err) { document.getElementById('summary').innerHTML = '<span class="pill">데이터 로드 오류</span>'; document.getElementById('hourlyInsightSlot').innerHTML = ''; document.getElementById('content').innerHTML = `<div class="notice">${err.message}</div>`; }
     }
     async function loadEvents() {
       try { const res = await fetch(dataUrl('events.json')); return res.ok ? await res.json() : { events: [], sourceNote:'events.json 없음' }; }
@@ -275,7 +276,8 @@
       renderTodayIssues(data, eventData);
       const groups = groupBy(data.metrics, x => x.group || 'Other');
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
-      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${hourlyInsightPanel(hourlyInsight)}${marketIntelligencePanel(marketState)}${shortSellingPanel(data.krxShortSellingDaily)}`;
+      document.getElementById('hourlyInsightSlot').innerHTML = hourlyInsightPanel(hourlyInsight);
+      document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${marketIntelligencePanel(marketState)}${shortSellingPanel(data.krxShortSellingDaily)}`;
       setTimeout(load, (data.refreshSeconds || 60) * 1000);
     }
 
