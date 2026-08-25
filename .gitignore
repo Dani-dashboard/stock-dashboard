@@ -17,3 +17,5 @@ tmp/
 prototype-backups/
 
 data/.fetch-all.lock/
+
+artifacts/

@@ -18,7 +18,9 @@ const files = [
   { local: 'data/latest.json', remote: `${prefix}latest.json`, required: true },
   { local: 'data/events.json', remote: `${prefix}events.json`, required: true },
   { local: 'data/alerts-latest.json', remote: `${prefix}alerts-latest.json`, required: false },
-  { local: 'data/market-state-10m.json', remote: `${prefix}market-state-10m.json`, required: false }
+  { local: 'data/market-state-10m.json', remote: `${prefix}market-state-10m.json`, required: false },
+  { local: 'data/hourly-context.json', remote: `${prefix}hourly-context.json`, required: false },
+  { local: 'data/hourly-ai-insight.json', remote: `${prefix}hourly-ai-insight.json`, required: false }
 ];
 
 if (!enabled) {
@@ -76,7 +78,7 @@ function normalizePrefix(value) {
 }
 
 function outputBodyForFile(local, body) {
-  if (local !== 'data/market-state-10m.json') return body;
+  if (!['data/market-state-10m.json', 'data/hourly-ai-insight.json'].includes(local)) return body;
   if (isKoreaMarketIntelligenceWindow()) return body;
   return Buffer.from('{}\n', 'utf8');
 }

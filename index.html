@@ -45,6 +45,15 @@
     .miDriver { border:1px solid rgba(148,163,184,.14); background:rgba(15,23,42,.42); border-radius:13px; padding:9px; color:var(--muted); font-size:11.5px; line-height:1.42; }
     .miDriver strong { color:#e5e7eb; }
     .miNote { margin-top:9px; color:var(--muted); font-size:11.5px; line-height:1.45; }
+    .aiInsightPanel { border:1px solid rgba(34,211,238,.30); background:linear-gradient(135deg,rgba(8,47,73,.76),rgba(49,46,129,.44)); border-radius:20px; padding:14px; margin:0 0 14px; box-shadow:0 14px 40px rgba(0,0,0,.15); }
+    .aiInsightHead { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; }
+    .aiInsightTitle { margin:0; font-size:18px; letter-spacing:-.04em; color:#cffafe; }
+    .aiInsightBadge { display:inline-flex; align-items:center; border:1px solid rgba(103,232,249,.30); background:rgba(15,23,42,.50); color:#cffafe; border-radius:999px; padding:5px 9px; font-size:11px; font-weight:850; white-space:nowrap; }
+    .aiInsightStance { color:#e0f2fe; font-size:13px; font-weight:800; line-height:1.45; }
+    .aiInsightBullets { margin:8px 0 0; padding-left:18px; color:#cbd5e1; font-size:12px; line-height:1.5; }
+    .aiInsightGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px; margin-top:10px; }
+    .aiInsightBox { border:1px solid rgba(148,163,184,.16); background:rgba(15,23,42,.45); border-radius:13px; padding:9px; color:var(--muted); font-size:11.5px; line-height:1.45; }
+    .aiInsightBox strong { display:block; color:#e5e7eb; margin-bottom:4px; }
     .eventsHead { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; }
     .eventsTitle { margin:0; font-size:16px; color:#bae6fd; letter-spacing:-.03em; }
     .eventsMeta { color:var(--muted); font-size:11px; line-height:1.35; text-align:right; }
@@ -168,6 +177,11 @@
       .miScore { padding:9px; }
       .miScoreValue { font-size:20px; }
       .miDrivers { grid-template-columns:1fr; gap:7px; }
+      .aiInsightPanel { padding:12px; margin-bottom:10px; border-radius:17px; }
+      .aiInsightHead { display:block; margin-bottom:8px; }
+      .aiInsightTitle { font-size:16px; }
+      .aiInsightBadge { margin-top:8px; }
+      .aiInsightGrid { grid-template-columns:1fr; gap:7px; }
       .eventsHead { margin-bottom:8px; }
       .eventsTitle { font-size:14px; }
       .eventsMeta { font-size:10px; }
@@ -231,13 +245,14 @@
     function formatValue(value, decimals) { if (value == null) return '—'; if (Number.isInteger(decimals)) return new Intl.NumberFormat('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value); return defaultFmt.format(value); }
     async function load() {
       try {
-        const [marketRes, eventData, marketState] = await Promise.all([
+        const [marketRes, eventData, marketState, hourlyInsight] = await Promise.all([
           fetch(dataUrl('latest.json')),
           loadEvents(),
-          loadMarketState()
+          loadMarketState(),
+          loadHourlyInsight()
         ]);
         if (!marketRes.ok) throw new Error('latest.json 로드 실패');
-        render(await marketRes.json(), eventData, marketState);
+        render(await marketRes.json(), eventData, marketState, hourlyInsight);
       }
       catch (err) { document.getElementById('summary').innerHTML = '<span class="pill">데이터 로드 오류</span>'; document.getElementById('content').innerHTML = `<div class="notice">${err.message}</div>`; }
     }
@@ -249,15 +264,33 @@
       try { const res = await fetch(dataUrl('market-state-10m.json')); return res.ok ? await res.json() : null; }
       catch { return null; }
     }
-    function render(data, eventData, marketState) {
+    async function loadHourlyInsight() {
+      try { const res = await fetch(dataUrl('hourly-ai-insight.json')); return res.ok ? await res.json() : null; }
+      catch { return null; }
+    }
+    function render(data, eventData, marketState, hourlyInsight) {
       window.__latestMetrics = Array.isArray(data.metrics) ? data.metrics : [];
       document.getElementById('summary').innerHTML = `<span class="pill">생성 ${timeAgo(data.generatedAt)}</span><span class="pill">정상 ${data.summary.ok}</span><span class="pill">확인 ${data.summary.warn}</span><span class="pill">장종료 ${data.summary.closed}</span><span class="pill">오류 ${data.summary.error}</span>`;
       document.getElementById('mobileHero').innerHTML = `<div class="mobileHeroTitle">모바일 빠른 현황 · 카드를 누르면 상세 지표로 이동</div><div class="mobileHeroStats"><span>정상 ${data.summary.ok}</span><span>확인 ${data.summary.warn}</span><span>장종료 ${data.summary.closed}</span><span>오류 ${data.summary.error}</span></div>`;
       renderTodayIssues(data, eventData);
       const groups = groupBy(data.metrics, x => x.group || 'Other');
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
-      document.getElementById('content').innerHTML = `${marketIntelligencePanel(marketState)}<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${shortSellingPanel(data.krxShortSellingDaily)}`;
+      document.getElementById('content').innerHTML = `${hourlyInsightPanel(hourlyInsight)}${marketIntelligencePanel(marketState)}<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${shortSellingPanel(data.krxShortSellingDaily)}`;
       setTimeout(load, (data.refreshSeconds || 60) * 1000);
+    }
+
+    function hourlyInsightPanel(payload) {
+      if (!isKoreaMarketIntelligenceWindow()) return '';
+      const insight = payload?.insight;
+      if (!insight || !Array.isArray(insight.summaryBullets)) return '';
+      const engine = payload.engine || {};
+      const aiLabel = engine.aiUsed ? `AI · ${engine.model || 'model'}` : 'Fallback · AI 비활성';
+      const generated = payload.timestamp ? new Date(payload.timestamp).toLocaleString('ko-KR', { timeZone:'Asia/Seoul', hour12:false }) : '시간 미정';
+      const bullets = insight.summaryBullets.slice(0, 5).map(x => `<li>${escapeHtml(x)}</li>`).join('');
+      const watch = Array.isArray(insight.watchTriggers) ? insight.watchTriggers.slice(0, 3).join(' / ') : '';
+      const invalidation = Array.isArray(insight.invalidation) ? insight.invalidation.slice(0, 3).join(' / ') : '';
+      const quality = insight.dataQualityNote || '';
+      return `<section class="aiInsightPanel" id="hourly-ai-insight"><div class="aiInsightHead"><div><div class="miKicker">HOURLY INSIGHT · LOW FREQUENCY</div><h2 class="aiInsightTitle">시간별 시장 인사이트</h2><div class="todayLine">${escapeHtml(generated)} KST · CPU 상태를 해석한 요약</div></div><div class="aiInsightBadge">${escapeHtml(aiLabel)} · 신뢰 ${escapeHtml(insight.confidenceLabel || '—')}</div></div><div class="aiInsightStance">${escapeHtml(insight.title || '시장 요약')} · ${escapeHtml(insight.stance || '')}</div><ul class="aiInsightBullets">${bullets}</ul><div class="aiInsightGrid"><div class="aiInsightBox"><strong>Base case</strong>${escapeHtml(insight.baseCase || '—')}</div><div class="aiInsightBox"><strong>Watch / Invalidation</strong>${escapeHtml(watch || '—')}${invalidation ? `<br>무효화: ${escapeHtml(invalidation)}` : ''}</div></div>${quality ? `<div class="miNote">${escapeHtml(quality)} · AI는 숫자 계산을 하지 않고 요약만 담당합니다.</div>` : ''}</section>`;
     }
 
     function marketIntelligencePanel(state) {
