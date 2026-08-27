@@ -20,7 +20,7 @@ const args = parseArgs(process.argv.slice(2));
 const timeoutMs = Number(args['timeout-ms'] || 15000);
 const writeOutput = args.write !== false;
 const endDd = String(args.endDd || args.date || formatKstDateCompact(new Date()));
-const days = Number(args.days || 80);
+const days = Number(args.days || 370);
 const strtDd = String(args.strtDd || compactDateOffset(endDd, -(days - 1)));
 
 const WATCHLIST = [
@@ -81,7 +81,7 @@ try {
     startedAt,
     generatedAt: new Date().toISOString(),
     requestedRange: { strtDd, endDd },
-    expectedLag: '잔고는 통상 T+2 안팎 지연 공시. 아침 갱신은 최근 80일을 훑어 최신 유효 거래일과 60개 관측치 평균 대비 상태를 잡음.',
+    expectedLag: '잔고는 통상 T+2 안팎 지연 공시. 최근 370일을 훑어 최신 Flow와 확정 Position을 분리하고, 최소 60거래일 이상이면 종목별 percentile 기반으로 보정함.',
     source: 'KRX Data Marketplace short-selling statistics',
     sourcePaths: {
       tradingByIssueTrend: 'dbms/MDC/STAT/srt/MDCSTAT30102',
@@ -208,62 +208,246 @@ function buildAlignedDailyRecords({ tradingRows, balanceRows, loanRows }) {
   const balanceByDate = new Map(balanceRows.map(row => [row.tradeDate, row]));
   const loanByDate = new Map(loanRows.map(row => [row.tradeDate, row]));
   const dates = [...new Set([...tradingByDate.keys(), ...balanceByDate.keys(), ...loanByDate.keys()])].sort();
-  return dates.map(date => {
+  const records = dates.map(date => {
     const trading = tradingByDate.get(date) || null;
     const balance = balanceByDate.get(date) || null;
     const loan = loanByDate.get(date) || null;
-    const shortBalance = balance?.shortSellBalance ?? null;
+    const shortBalanceRaw = balance?.shortSellBalance ?? null;
+    // KRX sometimes returns structural/placeholder zeroes in historical windows.
+    // Keep the raw row visible, but exclude non-positive balances from confirmed-position scoring.
+    const shortBalance = shortBalanceRaw && shortBalanceRaw > 0 ? shortBalanceRaw : null;
     const loanBalance = loan?.loanBalance ?? null;
     const shortLoanRatio = shortBalance !== null && loanBalance ? (shortBalance / loanBalance) * 100 : null;
+    const loanNet = loan?.loanTradeNew !== null && loan?.loanTradeRedeem !== null && loan?.loanTradeNew !== undefined && loan?.loanTradeRedeem !== undefined
+      ? loan.loanTradeNew - loan.loanTradeRedeem
+      : null;
     return {
       tradeDate: date,
       shortSaleVolume: trading?.shortSellVolume ?? null,
+      shortSaleValue: trading?.shortSellValue ?? null,
       totalVolume: trading?.totalVolume ?? null,
       shortSaleRatioPct: trading?.shortSellVolumeRatioPct ?? null,
       shortBalance,
-      shortBalanceRatioPct: balance?.balanceRatioPct ?? null,
+      shortBalanceRaw,
+      shortBalanceRatioPct: shortBalance === null ? null : balance?.balanceRatioPct ?? null,
       loanNew: loan?.loanTradeNew ?? null,
       loanReturn: loan?.loanTradeRedeem ?? null,
+      loanNet,
       loanBalance,
       shortLoanRatioPct: shortLoanRatio,
       dataDates: {
         shortTradeDate: trading?.tradeDate ?? null,
-        shortBalanceDate: balance?.tradeDate ?? null,
+        shortBalanceDate: shortBalance === null ? null : balance?.tradeDate ?? null,
         loanDate: loan?.tradeDate ?? null
       },
-      dataQuality: shortBalance !== null && loanBalance !== null ? 'confirmed_matched_date' : 'partial'
+      dataQuality: shortBalance !== null && loanBalance !== null ? 'confirmed_matched_date'
+        : shortBalanceRaw === 0 ? 'structural_zero_or_missing_short_balance'
+        : 'partial'
     };
-  }).filter(row => row.shortSaleVolume !== null || row.shortBalance !== null || row.loanBalance !== null).slice(-80);
+  }).filter(row => row.shortSaleVolume !== null || row.shortBalanceRaw !== null || row.loanBalance !== null);
+
+  for (let i = 0; i < records.length; i += 1) {
+    const prevLoan = [...records.slice(0, i)].reverse().find(row => row.loanBalance);
+    records[i].loanNetRatioPct = records[i].loanNet !== null && prevLoan?.loanBalance ? (records[i].loanNet / prevLoan.loanBalance) * 100 : null;
+  }
+  return records.slice(-370);
 }
 
 function buildShortPressure(records, tradingRows) {
-  const confirmed = records.filter(row => row.shortBalance !== null && row.loanBalance !== null && row.shortLoanRatioPct !== null);
+  const confirmed = records.filter(row => row.shortBalance > 0 && row.loanBalance > 0 && row.shortLoanRatioPct !== null);
   const latest = confirmed.at(-1) || null;
   const previous = confirmed.at(-2) || null;
   const chg1 = changeBundle(latest, previous);
   const chg5 = changeBundle(latest, nthPrevious(confirmed, latest, 5));
   const chg10 = changeBundle(latest, nthPrevious(confirmed, latest, 10));
   const chg20 = changeBundle(latest, nthPrevious(confirmed, latest, 20));
-  const flowRows = tradingRows.filter(row => row.shortSellVolumeRatioPct !== null && row.tradeDate <= (latest?.tradeDate || '9999-99-99')).slice(-5);
-  const flow5dAvgPct = avg(flowRows.map(row => row.shortSellVolumeRatioPct));
-  const latestFlow = tradingRows.filter(row => row.shortSellVolumeRatioPct !== null).at(-1) || null;
-  const signal = classifyShortPressure({ latest, chg10, latestFlow, flow5dAvgPct });
+
+  const finalizedTrading = latestFinalTradingRow(tradingRows);
+  const latestFlowDate = finalizedTrading?.tradeDate || null;
+  const latestFlowRow = records.filter(row => Number.isFinite(row.shortSaleRatioPct) && (!latestFlowDate || row.tradeDate <= latestFlowDate)).at(-1) || null;
+  const flowRows = records.filter(row => Number.isFinite(row.shortSaleRatioPct) && (!latestFlowRow || row.tradeDate <= latestFlowRow.tradeDate));
+  const recentFlow = flowRows.slice(-252);
+  const shortVolumeRatio3d = avg(flowRows.slice(-3).map(row => row.shortSaleRatioPct));
+  const shortVolumeRatio5d = avg(flowRows.slice(-5).map(row => row.shortSaleRatioPct));
+  const shortVolumeRatio20d = avg(flowRows.slice(-20).map(row => row.shortSaleRatioPct));
+  const shortFlowAcceleration = shortVolumeRatio3d !== null && shortVolumeRatio20d ? shortVolumeRatio3d / shortVolumeRatio20d : null;
+
+  const latestLoanFlowRow = records.filter(row => Number.isFinite(row.loanNetRatioPct)).at(-1) || null;
+  const loanFlowRows = records.filter(row => Number.isFinite(row.loanNetRatioPct) && (!latestLoanFlowRow || row.tradeDate <= latestLoanFlowRow.tradeDate));
+  const loanNet3d = avg(loanFlowRows.slice(-3).map(row => row.loanNetRatioPct));
+  const loanNet5d = avg(loanFlowRows.slice(-5).map(row => row.loanNetRatioPct));
+
+  const historyCount = Math.min(recentFlow.length, confirmed.length || recentFlow.length);
+  const confidence = historyCount >= 252 ? 'HIGH' : historyCount >= 60 ? 'MEDIUM' : 'LOW';
+  const weights = confidence === 'LOW' ? { position: 0.60, flow: 0.40 } : confidence === 'MEDIUM' ? { position: 0.45, flow: 0.55 } : { position: 0.40, flow: 0.60 };
+
+  const positionScore = buildPositionScore(confirmed, latest, chg10);
+  const flowScore = buildFlowScore({ flowRows, latestFlowRow, shortFlowAcceleration, latestLoanFlowRow, loanNet3d });
+  const nowcastScore = positionScore !== null && flowScore !== null
+    ? Math.round(positionScore * weights.position + flowScore * weights.flow)
+    : positionScore ?? flowScore ?? null;
+  const signal = classifyNowcastShortPressure({ positionScore, flowScore, nowcastScore, latest, chg10, latestFlowRow, shortVolumeRatio20d, latestLoanFlowRow, confidence });
+
   return {
-    basis: 'matched_trade_date_short_balance_and_loan_balance',
+    basis: 'confirmed_position_plus_latest_flow_nowcast',
     windows: { oneD: chg1, fiveD: chg5, tenD: chg10, twentyD: chg20 },
     latest,
-    latestFlow: latestFlow ? {
-      tradeDate: latestFlow.tradeDate,
-      shortSaleVolume: latestFlow.shortSellVolume,
-      totalVolume: latestFlow.totalVolume,
-      shortSaleRatioPct: latestFlow.shortSellVolumeRatioPct,
-      fiveDayAverageShortSaleRatioPct: flow5dAvgPct,
-      vsFiveDayAveragePctp: latestFlow.shortSellVolumeRatioPct !== null && flow5dAvgPct !== null ? latestFlow.shortSellVolumeRatioPct - flow5dAvgPct : null
+    confirmedPosition: latest ? {
+      tradeDate: latest.tradeDate,
+      shortBalance: latest.shortBalance,
+      loanBalance: latest.loanBalance,
+      shortLoanRatioPct: latest.shortLoanRatioPct,
+      tenDay: chg10,
+      score: positionScore
     } : null,
+    latestFlow: latestFlowRow ? {
+      tradeDate: latestFlowRow.tradeDate,
+      shortSaleVolume: latestFlowRow.shortSaleVolume,
+      totalVolume: latestFlowRow.totalVolume,
+      shortSaleRatioPct: latestFlowRow.shortSaleRatioPct,
+      shortVolumeRatio3d,
+      shortVolumeRatio5d,
+      shortVolumeRatio20d,
+      shortFlowAcceleration,
+      loanDate: latestLoanFlowRow?.tradeDate ?? null,
+      loanNew: latestLoanFlowRow?.loanNew ?? null,
+      loanReturn: latestLoanFlowRow?.loanReturn ?? null,
+      loanNet: latestLoanFlowRow?.loanNet ?? null,
+      loanNetRatioPct: latestLoanFlowRow?.loanNetRatioPct ?? null,
+      loanNet3d,
+      loanNet5d,
+      score: flowScore,
+      fiveDayAverageShortSaleRatioPct: shortVolumeRatio5d,
+      vsFiveDayAveragePctp: latestFlowRow.shortSaleRatioPct !== null && shortVolumeRatio5d !== null ? latestFlowRow.shortSaleRatioPct - shortVolumeRatio5d : null
+    } : null,
+    scores: {
+      positionScore,
+      flowScore,
+      nowcastScore,
+      weights,
+      confidence,
+      historyCount
+    },
     signal,
-    dataQuality: latest ? 'confirmed' : 'missing_matched_short_loan_date',
-    note: 'Short/Loan ratio is calculated only when KRX short balance date and FreeSIS loan balance date match.'
+    dataQuality: latest && latestFlowRow ? 'confirmed_position_and_latest_flow' : latest ? 'confirmed_position_only' : latestFlowRow ? 'latest_flow_only' : 'missing',
+    note: '공매도 거래량은 gross flow라 잔고에 더하지 않음. Nowcast는 T+2 확정 Position과 최신 Flow를 분리 결합한 압력 점수.'
   };
+}
+
+function buildPositionScore(confirmed, latest, chg10) {
+  if (!latest) return null;
+  const hist = buildChangeHistory(confirmed, 10);
+  const shortTrendScore = metricScore(chg10?.shortBalancePct, hist.map(row => row.shortBalancePct), trendThresholdScore(chg10?.shortBalancePct, { strong: 20, watch: 5 }));
+  const ratioTrendScore = metricScore(chg10?.shortLoanRatioPctp, hist.map(row => row.shortLoanRatioPctp), trendThresholdScore(chg10?.shortLoanRatioPctp, { strong: 1.5, watch: 0.5 }));
+  const loanTrendScore = metricScore(chg10?.loanBalancePct, hist.map(row => row.loanBalancePct), trendThresholdScore(chg10?.loanBalancePct, { strong: 5, watch: 1.5 }));
+  return weightedScore([
+    [shortTrendScore, 0.45],
+    [ratioTrendScore, 0.35],
+    [loanTrendScore, 0.20]
+  ]);
+}
+
+function buildFlowScore({ flowRows, latestFlowRow, shortFlowAcceleration, latestLoanFlowRow, loanNet3d }) {
+  if (!latestFlowRow && !latestLoanFlowRow) return null;
+  const shortVolumeRatioScore = metricScore(latestFlowRow?.shortSaleRatioPct, flowRows.slice(-252).map(row => row.shortSaleRatioPct), trendThresholdScore(latestFlowRow?.shortSaleRatioPct, { strong: 8, watch: 5 }));
+  const accelScore = metricScore(shortFlowAcceleration, rollingAccelerationHistory(flowRows), accelerationThresholdScore(shortFlowAcceleration));
+  const loanNet1dScore = metricScore(latestLoanFlowRow?.loanNetRatioPct, flowRows.map(row => row.loanNetRatioPct), trendThresholdScore(latestLoanFlowRow?.loanNetRatioPct, { strong: 3, watch: 1 }));
+  const loanNet3dScore = metricScore(loanNet3d, rollingAverageHistory(flowRows, 'loanNetRatioPct', 3), trendThresholdScore(loanNet3d, { strong: 2, watch: 0.7 }));
+  return weightedScore([
+    [shortVolumeRatioScore, 0.40],
+    [accelScore, 0.25],
+    [loanNet1dScore, 0.20],
+    [loanNet3dScore, 0.15]
+  ]);
+}
+
+function buildChangeHistory(rows, window) {
+  const out = [];
+  for (let i = window; i < rows.length; i += 1) out.push(changeBundle(rows[i], rows[i - window]));
+  return out.filter(Boolean);
+}
+
+function rollingAccelerationHistory(rows) {
+  const out = [];
+  for (let i = 19; i < rows.length; i += 1) {
+    const three = avg(rows.slice(Math.max(0, i - 2), i + 1).map(row => row.shortSaleRatioPct));
+    const twenty = avg(rows.slice(i - 19, i + 1).map(row => row.shortSaleRatioPct));
+    if (three !== null && twenty) out.push(three / twenty);
+  }
+  return out;
+}
+
+function rollingAverageHistory(rows, key, window) {
+  const out = [];
+  for (let i = window - 1; i < rows.length; i += 1) out.push(avg(rows.slice(i - window + 1, i + 1).map(row => row[key])));
+  return out.filter(Number.isFinite);
+}
+
+function metricScore(value, history, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const samples = history.filter(v => Number.isFinite(Number(v))).map(Number);
+  if (samples.length >= 60) return Math.round(percentileRank(samples, n));
+  return fallback;
+}
+
+function percentileRank(samples, value) {
+  const below = samples.filter(v => v < value).length;
+  const equal = samples.filter(v => v === value).length;
+  return ((below + equal * 0.5) / samples.length) * 100;
+}
+
+function trendThresholdScore(value, { strong, watch }) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n >= strong) return 90;
+  if (n >= watch) return 70;
+  if (n <= -strong) return 10;
+  if (n <= -watch) return 30;
+  return 50;
+}
+
+function accelerationThresholdScore(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 1.75) return 90;
+  if (n >= 1.25) return 70;
+  if (n <= 0.65) return 20;
+  if (n <= 0.85) return 35;
+  return 50;
+}
+
+function weightedScore(parts) {
+  const usable = parts.filter(([score]) => Number.isFinite(Number(score)));
+  if (!usable.length) return null;
+  const weightSum = usable.reduce((sum, [, weight]) => sum + weight, 0);
+  const score = usable.reduce((sum, [score, weight]) => sum + Number(score) * weight, 0) / weightSum;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function classifyNowcastShortPressure({ positionScore, flowScore, nowcastScore, latest, chg10, latestFlowRow, shortVolumeRatio20d, latestLoanFlowRow, confidence }) {
+  if (nowcastScore === null) return { level: 'neutral', score: null, title: '데이터 대기', summary: '공매도/대차 데이터 수집 대기', confidence };
+  const posHigh = Number(positionScore) >= 65;
+  const posLow = Number(positionScore) <= 40;
+  const flowHigh = Number(flowScore) >= 65;
+  const flowLow = Number(flowScore) <= 40;
+  let level = nowcastScore >= 70 ? 'high' : nowcastScore >= 58 ? 'watch' : nowcastScore <= 35 ? 'relief' : 'neutral';
+  let title = level === 'high' ? '숏 압력 강화' : level === 'watch' ? '신규 숏 관찰' : level === 'relief' ? '숏 압력 완화' : '숏 압력 중립';
+  if (posHigh && flowHigh) { level = 'high'; title = '숏 압력 지속/강화'; }
+  else if (posLow && flowHigh) { level = 'watch'; title = '신규 숏 구축 선행 신호'; }
+  else if (posHigh && flowLow) { level = 'relief'; title = '기존 숏 높지만 신규 압력 완화'; }
+  else if (posLow && flowLow) { level = 'relief'; title = '숏커버/압력 완화'; }
+
+  const parts = [];
+  if (chg10?.shortBalancePct !== null && chg10?.shortBalancePct !== undefined) parts.push(`확정잔고 10D ${formatSignedNumber(chg10.shortBalancePct, 1)}%`);
+  if (chg10?.shortLoanRatioPctp !== null && chg10?.shortLoanRatioPctp !== undefined) parts.push(`공매/대차 ${formatSignedNumber(chg10.shortLoanRatioPctp, 1)}%p`);
+  if (latestFlowRow?.shortSaleRatioPct !== null && latestFlowRow?.shortSaleRatioPct !== undefined) {
+    const avgText = shortVolumeRatio20d === null ? '' : ` vs 20D ${formatValue(shortVolumeRatio20d, 2)}%`;
+    parts.push(`Flow ${formatValue(latestFlowRow.shortSaleRatioPct, 2)}%${avgText}`);
+  }
+  if (latestLoanFlowRow?.loanNetRatioPct !== null && latestLoanFlowRow?.loanNetRatioPct !== undefined) parts.push(`대차순증감 ${formatSignedNumber(latestLoanFlowRow.loanNetRatioPct, 2)}%`);
+  if (confidence === 'LOW') parts.push('신뢰도 LOW');
+  return { level, score: nowcastScore, title, summary: parts.join(' / ') || '큰 변화 없음', confidence };
 }
 
 function changeBundle(latest, base) {
