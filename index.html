@@ -130,17 +130,17 @@
     .shortPanel .volumeTickTime { color:#e9d5ff; }
     .shortPanel .volumeCard { border-color:rgba(168,85,247,.22); background:rgba(15,23,42,.58); }
     .groupSummary { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; margin-bottom:18px; }
-    .groupPill { border:1px solid var(--line); background:rgba(24,36,60,.72); border-radius:14px; padding:11px; }
-    .groupPill strong { display:block; font-size:13px; margin-bottom:6px; color:#dbeafe; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .groupPill { border:1px solid var(--group-border, var(--line)); background:linear-gradient(135deg,var(--group-bg,rgba(24,36,60,.72)),rgba(17,28,51,.62)); border-radius:14px; padding:11px; box-shadow:inset 3px 0 0 var(--group-accent, #38bdf8); }
+    .groupPill strong { display:block; font-size:13px; margin-bottom:6px; color:var(--group-title,#dbeafe); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .groupPill span { font-size:12px; color:var(--muted); }
-    details.groupBlock { margin-top:16px; border-top:1px solid rgba(148,163,184,.16); padding-top:13px; }
+    details.groupBlock { margin-top:16px; border:1px solid var(--group-border,rgba(148,163,184,.16)); border-left:4px solid var(--group-accent,#38bdf8); background:linear-gradient(135deg,var(--group-bg,rgba(17,28,51,.28)),rgba(15,23,42,.10)); border-radius:18px; padding:13px 13px 15px; box-shadow:0 12px 30px rgba(0,0,0,.10); }
     details.groupBlock > summary { cursor:pointer; list-style:none; display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:11px; }
     details.groupBlock > summary::-webkit-details-marker { display:none; }
-    .groupTitle { margin:0; color:#bfdbfe; font-size:17px; }
+    .groupTitle { margin:0; color:var(--group-title,#bfdbfe); font-size:17px; }
     .groupDesc { margin-top:4px; color:var(--muted); font-size:12px; }
-    .groupCounts { color:var(--muted); font-size:12px; white-space:nowrap; }
+    .groupCounts { color:var(--group-title,#cbd5e1); font-size:12px; white-space:nowrap; border:1px solid var(--group-border,rgba(148,163,184,.18)); background:rgba(15,23,42,.36); border-radius:999px; padding:4px 8px; }
     .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
-    .card { background:rgba(17,28,51,.9); border:1px solid var(--line); border-radius:16px; padding:14px; min-height:146px; scroll-margin-top:118px; }
+    .card { background:linear-gradient(180deg,var(--group-card-bg,rgba(17,28,51,.92)),rgba(17,28,51,.86)); border:1px solid var(--group-card-border,var(--line)); border-top-color:var(--group-border,var(--line)); border-radius:16px; padding:14px; min-height:146px; scroll-margin-top:118px; }
     .card.highlightTarget { border-color:rgba(103,232,249,.85); box-shadow:0 0 0 3px rgba(56,189,248,.14), 0 18px 42px rgba(0,0,0,.26); }
     .top { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
     .name { font-weight:750; font-size:14px; }
@@ -778,8 +778,30 @@
       if (value <= 2.0) return { phrase: `${subject}은 풋 쪽이 강해 위험회피가 뚜렷한 상태`, cls: 'neg', badge: '위험회피' };
       return { phrase: `${subject}은 풋 쏠림이 극단적이라 공포와 반전 가능성을 함께 봐야 하는 구간`, cls: 'neg', badge: '공포 극단' };
     }
-    function groupPill(g) { return `<div class="groupPill"><strong>${escapeHtml(g.label || g.key)}</strong><span>정상 ${g.ok || 0} · 확인 ${g.warn || 0} · 종료 ${g.closed || 0} · 오류 ${g.error || 0}</span></div>`; }
-    function groupSection(g, items) { return `<details class="groupBlock" open><summary><div><h2 class="groupTitle">${escapeHtml(g.label || g.key)}</h2><div class="groupDesc">${escapeHtml(g.description || '')}</div></div><div class="groupCounts">${items.length}개</div></summary><section class="grid">${items.map(card).join('')}</section></details>`; }
+    const GROUP_THEMES = {
+      FX: ['#38bdf8', 'rgba(8,47,73,.30)', '#bae6fd'],
+      Commodity: ['#f59e0b', 'rgba(120,53,15,.24)', '#fde68a'],
+      Crypto: ['#a855f7', 'rgba(59,7,100,.24)', '#e9d5ff'],
+      Rates: ['#818cf8', 'rgba(49,46,129,.24)', '#c7d2fe'],
+      'US Futures': ['#22d3ee', 'rgba(14,116,144,.22)', '#cffafe'],
+      US: ['#60a5fa', 'rgba(30,64,175,.22)', '#bfdbfe'],
+      Semis: ['#f472b6', 'rgba(131,24,67,.22)', '#fbcfe8'],
+      KR: ['#22c55e', 'rgba(20,83,45,.22)', '#bbf7d0'],
+      KIS: ['#14b8a6', 'rgba(19,78,74,.22)', '#99f6e4'],
+      Other: ['#94a3b8', 'rgba(71,85,105,.18)', '#cbd5e1']
+    };
+    function groupTheme(key) { return GROUP_THEMES[key] || GROUP_THEMES.Other; }
+    function groupStyle(key) {
+      const [accent, bg, title] = groupTheme(key);
+      return `--group-accent:${accent};--group-bg:${bg};--group-title:${title};--group-border:${hexToRgba(accent,.32)};--group-card-border:${hexToRgba(accent,.20)};--group-card-bg:${hexToRgba(accent,.08)}`;
+    }
+    function hexToRgba(hex, alpha) {
+      const value = hex.replace('#', '');
+      const num = Number.parseInt(value, 16);
+      return `rgba(${(num >> 16) & 255},${(num >> 8) & 255},${num & 255},${alpha})`;
+    }
+    function groupPill(g) { return `<div class="groupPill" style="${groupStyle(g.key)}"><strong>${escapeHtml(g.label || g.key)}</strong><span>정상 ${g.ok || 0} · 확인 ${g.warn || 0} · 종료 ${g.closed || 0} · 오류 ${g.error || 0}</span></div>`; }
+    function groupSection(g, items) { return `<details class="groupBlock" style="${groupStyle(g.key)}" open><summary><div><h2 class="groupTitle">${escapeHtml(g.label || g.key)}</h2><div class="groupDesc">${escapeHtml(g.description || '')}</div></div><div class="groupCounts">${items.length}개</div></summary><section class="grid">${items.map(card).join('')}</section></details>`; }
     function card(m) {
       const status = m.status || { level:'error', label:'장애' };
       const changeClass = m.change > 0 ? 'pos' : m.change < 0 ? 'neg' : '';
