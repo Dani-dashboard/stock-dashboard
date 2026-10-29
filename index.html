@@ -589,7 +589,7 @@
       if (candidate.status !== 'observing' || !Number.isFinite(age) || age < -30 || age > 180) return '<div class="cashInvestorMeta">한국투자 시험 관측 · 최근 수집 오류/지연. 현재 수급 판단 보류.</div>';
       const rows = Array.isArray(candidate.rows) ? candidate.rows : [];
       const report = candidate.cadence || {};
-      const actors = [['외국인','foreign'],['기관','institution'],['개인','personal']].map(([label,key]) => {
+      const actors = [['외국인','foreign'],['기관','institution']].map(([label,key]) => {
         const matches = rows.filter(r => r.investor === label+'(십억원)');
         const net = matches.length === 1 ? matches[0].netBuy : null;
         const good = typeof net === 'number' && Number.isFinite(net);
