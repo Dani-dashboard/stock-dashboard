@@ -552,7 +552,17 @@
 
     function cashInvestorPanel(investorFlows) {
       const flow = (Array.isArray(investorFlows) ? investorFlows : []).find(x => x.id === 'kospi_cash');
-      const heading = '<strong>외국인·기관 현물 수급</strong>';
+      const heading = '<strong>외국인·기관 현물 수급 · KRX·NXT 통합</strong>';
+      const reference = (Array.isArray(investorFlows) ? investorFlows : []).find(x => x.id === 'kospi_cash_krx');
+      if (!flow || flow.scope !== 'KRX_NXT' || flow.status !== 'ok') {
+        const refRows = Array.isArray(reference?.rows) ? reference.rows : [];
+        const ref = ['외국인', '기관'].map(name => {
+          const row = refRows.find(r => String(r.investor || '').startsWith(name + '('));
+          const net = row?.netBuy;
+          return `${name} ${typeof net === 'number' && Number.isFinite(net) ? `${formatInteger(Math.abs(net) * 10)}억원 ${net > 0 ? '순매수' : net < 0 ? '순매도' : '균형'}` : '확인 중'}`;
+        }).join(' · ');
+        return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">통합 수급 연결·검증 대기<br>KRX 단독값으로 통합 수급을 대신하지 않습니다.</div>${reference ? `<details><summary>KRX 참고값 보기 · 통합값 아님</summary><div class="cashInvestorMeta">${escapeHtml(ref)}<br>조회 ${escapeHtml(reference.currentDatetime || reference.fetchedAt || '')} · 실제 집계 시각 미검증</div></details>` : ''}</div>`;
+      }
       if (!flow || flow.unit !== '십억원') return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">거래대금 자료 확인 중 · 거래량(주) 아님</div></div>`;
       const today = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Seoul', year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).replaceAll('-', '');
       const age = (Date.now() - Date.parse(flow.fetchedAt)) / 1000;
@@ -567,7 +577,7 @@
         const cls = net > 0 ? 'pos' : net < 0 ? 'neg' : '';
         return `<div class="cashInvestor"><strong>${name}</strong><div class="cashInvestorNet ${cls}">${amount(Number.isFinite(net) ? Math.abs(net) : null)}</div><div>${label}</div><div class="cashInvestorDetail">매수 ${amount(row.buy)}<br>매도 ${amount(row.sell)}</div></div>`;
       }).join('');
-      return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">${escapeHtml(state)} · 거래대금(억원), 거래량(주) 아님<br>기준 ${escapeHtml(flow.currentDatetime || flow.tradeDate || '확인 중')} KST · KRX</div><div class="cashInvestorGrid">${actors}</div></div>`;
+      return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">${escapeHtml(state)} · 거래대금(억원), 거래량(주) 아님<br>수집 ${escapeHtml(flow.observationTimestamp || flow.fetchedAt || '확인 중')} · ${escapeHtml(flow.provider || flow.source || 'API')} · 통합<br>실제 거래소 집계 시각과 다를 수 있습니다.</div><div class="cashInvestorGrid">${actors}</div></div>`;
     }
 
     function volumeTick(item, checkpoint) {
