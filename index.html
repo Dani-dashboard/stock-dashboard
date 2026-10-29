@@ -554,6 +554,7 @@
     function cashInvestorPanel(investorFlows) {
       const flow = (Array.isArray(investorFlows) ? investorFlows : []).find(x => x.id === 'kospi_cash');
       const heading = '<strong>외국인·기관 현물 수급 · KRX·NXT 통합</strong>';
+      const candidate = (Array.isArray(investorFlows) ? investorFlows : []).find(x => x.id === 'kospi_cash_candidate');
       const reference = (Array.isArray(investorFlows) ? investorFlows : []).find(x => x.id === 'kospi_cash_krx');
       if (!flow || flow.scope !== 'KRX_NXT' || flow.status !== 'ok') {
         const refRows = Array.isArray(reference?.rows) ? reference.rows : [];
@@ -562,7 +563,7 @@
           const net = row?.netBuy;
           return `${name} ${typeof net === 'number' && Number.isFinite(net) ? `${formatInteger(Math.abs(net) * 10)}억원 ${net > 0 ? '순매수' : net < 0 ? '순매도' : '균형'}` : '확인 중'}`;
         }).join(' · ');
-        return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">통합 수급 연결·검증 대기<br>KRX 단독값으로 통합 수급을 대신하지 않습니다.</div>${reference ? `<details><summary>KRX 참고값 보기 · 통합값 아님</summary><div class="cashInvestorMeta">${escapeHtml(ref)}<br>조회 ${escapeHtml(reference.currentDatetime || reference.fetchedAt || '')} · 실제 집계 시각 미검증</div></details>` : ''}</div>`;
+        return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">통합 수급 연결·검증 대기<br>KRX 단독값으로 통합 수급을 대신하지 않습니다.</div>${cashCandidatePanel(candidate)}${reference ? `<details><summary>KRX 참고값 보기 · 통합값 아님</summary><div class="cashInvestorMeta">${escapeHtml(ref)}<br>조회 ${escapeHtml(reference.currentDatetime || reference.fetchedAt || '')} · 실제 집계 시각 미검증</div></details>` : ''}</div>`;
       }
       if (!flow || flow.unit !== '십억원') return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">거래대금 자료 확인 중 · 거래량(주) 아님</div></div>`;
       const today = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Seoul', year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).replaceAll('-', '');
@@ -579,6 +580,24 @@
         return `<div class="cashInvestor"><strong>${name}</strong><div class="cashInvestorNet ${cls}">${amount(Number.isFinite(net) ? Math.abs(net) : null)}</div><div>${label}</div><div class="cashInvestorDetail">매수 ${amount(row.buy)}<br>매도 ${amount(row.sell)}</div></div>`;
       }).join('');
       return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">${escapeHtml(state)} · 거래대금(억원), 거래량(주) 아님<br>수집 ${escapeHtml(flow.observationTimestamp || flow.fetchedAt || '확인 중')} · ${escapeHtml(flow.provider || flow.source || 'API')} · 통합<br>실제 거래소 집계 시각과 다를 수 있습니다.</div><div class="cashInvestorGrid">${actors}</div></div>`;
+    }
+
+    function cashCandidatePanel(candidate) {
+      if (!candidate) return '';
+      const clock = value => !value || !Number.isFinite(Date.parse(value)) ? '확인 중' : new Date(value).toLocaleTimeString('ko-KR', {timeZone:'Asia/Seoul',hour12:false});
+      const age = (Date.now()-Date.parse(candidate.fetchedAt))/1000;
+      if (candidate.status !== 'observing' || !Number.isFinite(age) || age < -30 || age > 180) return '<div class="cashInvestorMeta">한국투자 시험 관측 · 최근 수집 오류/지연. 현재 수급 판단 보류.</div>';
+      const rows = Array.isArray(candidate.rows) ? candidate.rows : [];
+      const report = candidate.cadence || {};
+      const actors = [['외국인','foreign'],['기관','institution'],['개인','personal']].map(([label,key]) => {
+        const matches = rows.filter(r => r.investor === label+'(십억원)');
+        const net = matches.length === 1 ? matches[0].netBuy : null;
+        const good = typeof net === 'number' && Number.isFinite(net);
+        const delta = report.actorLastDelta?.[key];
+        const deltaText = delta ? `직전 수집 대비 ${delta.rawNetDelta>0?'+':delta.rawNetDelta<0?'-':''}${formatValue(Math.abs(delta.rawNetDelta)/100,2)}억원 (${formatInteger(delta.seconds)}초)` : '비교 기록 축적 중';
+        return `<div class="cashInvestor"><strong>${label}</strong><div class="cashInvestorNet">${good ? formatInteger(Math.abs(net)*10)+'억원' : '—'}</div><div>${!good ? '확인 중' : net>0 ? '순매수' : net<0 ? '순매도' : '매수·매도 균형'}</div><div class="cashInvestorDetail">${escapeHtml(deltaText)}<br>최근 값 변경 관측 ${escapeHtml(clock(report.actorLastChangedAt?.[key]))}</div></div>`;
+      }).join('');
+      return `<div class="cashInvestorMeta"><strong>한국투자 KOSPI 현물 · 시험 관측</strong><br>KRX·NXT 통합 범위·자료 시차 미검증<br>수집 ${escapeHtml(clock(candidate.fetchedAt))} KST · 매분 저장 · ${formatInteger(report.validPolls || 0)}회 관측<br>원문 기준일·집계 시각 없음 · ${escapeHtml(candidate.unitVerification || '단위 검증 중')}</div><div class="cashInvestorGrid">${actors}</div><div class="cashInvestorMeta">수치가 같아도 원천이 갱신되지 않았다고 단정하지 않습니다.</div>`;
     }
 
     function volumeTick(item, checkpoint) {
