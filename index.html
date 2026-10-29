@@ -465,6 +465,7 @@
     }
 
     function formatProgramAmount(value) {
+      if (value == null || value === '') return '—';
       const n = Number(value);
       if (!Number.isFinite(n)) return '—';
       const eok = n / 100;
