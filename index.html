@@ -229,11 +229,106 @@
       .card { padding:12px; min-height:0; }
       .value { font-size:24px; margin-top:11px; }
     }
+
+    .viewSwitch { display:flex; align-self:flex-start; border:1px solid #334766; border-radius:12px; padding:3px; background:#0b1427; gap:3px; }
+    .viewSwitch button { border:0; border-radius:9px; color:#94a3b8; background:transparent; padding:9px 17px; min-height:40px; font:700 14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor:pointer; }
+    .viewSwitch button[aria-pressed="true"] { background:#164e63; color:#ecfeff; box-shadow:inset 0 0 0 1px #38bdf866; }
+    .viewSwitch button:focus-visible { outline:2px solid #67e8f9; outline-offset:2px; }
+    .valueUnit { font-size:14px; font-weight:500; color:var(--muted); letter-spacing:0; }
+    .briefQuality { display:none; }
+    .cashHeading { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:14px; }
+    .cashScope { font-size:14px; color:#bae6fd; }
+    .cashClock { color:var(--muted); font-size:14px; margin:5px 0 8px; }
+    .cashUnit { font-size:14px; font-weight:500; margin-left:3px; }
+    .cashInvestorNet.pos { color:var(--green); }
+    .cashInvestorNet.neg { color:var(--red); }
+    body[data-view="detail"] .notice { display:block; }
+    body[data-view="brief"] .notice,
+    body[data-view="brief"] header .sub,
+    body[data-view="brief"] #dashboard-progress,
+    body[data-view="brief"] #mobileHero,
+    body[data-view="brief"] .groupDesc,
+    body[data-view="brief"] .card .top .meta,
+    body[data-view="brief"] .card .foot,
+    body[data-view="brief"] .note,
+    body[data-view="brief"] .miNote,
+    body[data-view="brief"] .volumeSub,
+    body[data-view="brief"] .volumeTop .meta,
+    body[data-view="brief"] .volumeHead .eventsMeta,
+    body[data-view="brief"] .cashInvestorMeta,
+    body[data-view="brief"] .cashInvestorDetail,
+    body[data-view="brief"] .eventsPanel .eventWhy,
+    body[data-view="brief"] .miniWhy,
+    body[data-view="brief"] .eventGroups { display:none; }
+    body[data-view="brief"] .briefQuality { display:block; color:#fbbf24; font-size:14px; margin-top:4px; }
+    body[data-view="brief"] .priorityGrid { gap:8px; }
+    body[data-view="brief"] .card { padding:12px; min-height:118px; border-radius:12px; }
+    body[data-view="brief"] .card .value { margin-top:8px; font-size:24px; }
+    body[data-view="brief"] .card .change { font-size:14px; line-height:1.35; }
+    body[data-view="brief"] .volumeCard { padding:12px; border-radius:12px; }
+    body[data-view="brief"] .volumeTicks { margin-top:8px; }
+    body[data-view="brief"] .volumeTick { padding:5px; min-height:0; }
+    body[data-view="brief"] .cashInvestors { padding-top:9px; margin-top:9px; }
+    body[data-view="brief"] .cashInvestor { padding:8px; }
+    body[data-view="brief"] .cashInvestorNet { font-size:20px; margin:4px 0; }
+    body[data-view="brief"] .cashInvestorGrid { gap:6px; }
+    body[data-view="brief"] .eventsPanel { padding:12px; }
+    body[data-view="brief"] .dayCard { min-height:0; }
+    body[data-view="brief"] .todayKicker,
+    body[data-view="brief"] .miKicker { display:none; }
+    body[data-view="brief"] .issueText,
+    body[data-view="brief"] .issueTitle,
+    body[data-view="brief"] .aiInsightBullets,
+    body[data-view="brief"] .aiInsightBox { font-size:14px; line-height:1.45; }
+    body[data-view="brief"] .issueMeta { display:none; }
+    @media (max-width:720px) {
+      header { align-items:center; gap:8px; padding:10px; }
+      header > div:first-child { flex:1; min-width:0; }
+      header h1 { font-size:17px; }
+      .viewSwitch button { padding:9px 13px; min-height:40px; }
+      .toolbar { top:var(--header-height,110px); }
+      .card { scroll-margin-top:calc(var(--header-height,110px) + 60px); }
+      body[data-view="brief"] .summary { flex-wrap:nowrap; overflow-x:auto; gap:5px; }
+      body[data-view="brief"] .summary .pill { white-space:nowrap; padding:4px 6px; }
+      body[data-view="brief"] .summary .pill:not(:first-child) { display:none; }
+      body[data-view="brief"] .toolbar { margin-bottom:8px; padding-top:5px; padding-bottom:5px; }
+      body[data-view="brief"] .priorityGrid,
+      body[data-view="brief"] .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+      body[data-view="brief"] .priorityCard { display:flex; flex-direction:column; align-items:stretch; padding:10px; gap:4px; min-width:0; }
+      body[data-view="brief"] .priorityCard .pname { font-size:14px; white-space:normal; }
+      body[data-view="brief"] .priorityCard .pvalue { font-size:21px; text-align:left; white-space:normal; overflow-wrap:anywhere; }
+      body[data-view="brief"] .priorityCard .pchange { text-align:left; font-size:14px; }
+      body[data-view="brief"] .card { padding:10px; min-width:0; }
+      body[data-view="brief"] .card .name { font-size:14px; line-height:1.35; overflow-wrap:anywhere; }
+      body[data-view="brief"] .card .top { display:block; }
+      body[data-view="brief"] .status { display:inline-flex; margin-top:4px; padding:2px 5px; font-size:14px; }
+      body[data-view="brief"] .card .value { font-size:22px; overflow-wrap:anywhere; }
+      body[data-view="brief"] .volumeMain { grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+      body[data-view="brief"] .volumeMain .meta,
+      body[data-view="brief"] .volumeName,
+      body[data-view="brief"] .volumeBadge { font-size:14px; }
+      body[data-view="brief"] .volumePct { font-size:20px; text-align:right; }
+      body[data-view="brief"] .volumeValue { font-size:22px; overflow-wrap:anywhere; }
+      body[data-view="brief"] .volumeTickTime,
+      body[data-view="brief"] .volumeTickValue { font-size:14px; overflow-wrap:anywhere; }
+      body[data-view="brief"] .volumeTicks { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      body[data-view="brief"] .miDrivers { display:none; }
+      body[data-view="brief"] .miScoreName,
+      body[data-view="brief"] .miScoreDelta { font-size:14px; }
+      body[data-view="brief"] .dayCard { min-width:190px; }
+      body[data-view="brief"] .miniTitle,
+      body[data-view="brief"] .miniTime,
+      body[data-view="brief"] .eventName { font-size:14px; }
+    }
   </style>
 </head>
-<body>
+<body data-view="detail">
   <header>
     <div><h1>Index Dashboard MVP</h1><div class="sub">무료 소스 우선 · 1분 갱신 · 상태 투명 표시</div></div>
+    <div class="viewSwitch" role="group" aria-label="정보 표시 방식">
+      <button type="button" data-mode="brief" aria-pressed="false" onclick="setDashboardView('brief')">Brief</button>
+      <button type="button" data-mode="detail" aria-pressed="true" onclick="setDashboardView('detail')">Detail</button>
+    </div>
     <div class="summary" id="summary"></div>
   </header>
   <main>
@@ -245,12 +340,30 @@
     <div id="content"></div>
   </main>
   <script>
+    let dashboardView = window.matchMedia('(max-width:720px)').matches ? 'brief' : 'detail';
+    try { const saved = localStorage.getItem('dashboard-view-v1'); if (['brief','detail'].includes(saved)) dashboardView = saved; } catch {}
+    function setDashboardView(mode, remember = true) {
+      dashboardView = mode === 'brief' ? 'brief' : 'detail';
+      document.body.dataset.view = dashboardView;
+      document.querySelectorAll('.viewSwitch button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.mode === dashboardView)));
+      if (remember) try { localStorage.setItem('dashboard-view-v1', dashboardView); } catch {}
+      if (dashboardView === 'detail') setAllGroups(true);
+      updateHeaderHeight();
+    }
+    function updateHeaderHeight() {
+      const header = document.querySelector('header');
+      document.documentElement.style.setProperty('--header-height', `${header.offsetHeight}px`);
+    }
+    setDashboardView(dashboardView, false);
+    new ResizeObserver(updateHeaderHeight).observe(document.querySelector('header'));
     const defaultFmt = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
     const pctFmt = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2, signDisplay:'always' });
     const DATA_BASE_URL = (window.STOCK_DASHBOARD_DATA_BASE_URL || 'https://fkjulfhlpkwavrxegaju.supabase.co/storage/v1/object/public/stock-dashboard/data').replace(/\/$/, '');
     function dataUrl(file) { return `${DATA_BASE_URL}/${file}?ts=${Date.now()}`; }
     function formatValue(value, decimals) { if (value == null) return '—'; if (Number.isInteger(decimals)) return new Intl.NumberFormat('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value); return defaultFmt.format(value); }
+    let refreshTimer;
     async function load() {
+      clearTimeout(refreshTimer);
       try {
         const [marketRes, eventData, marketState, hourlyInsight] = await Promise.all([
           fetch(dataUrl('latest.json')),
@@ -284,7 +397,7 @@
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
       document.getElementById('hourlyInsightSlot').innerHTML = hourlyInsightPanel(hourlyInsight);
       document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes, data.investorFlows)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${marketIntelligencePanel(marketState)}${shortSellingPanel(data.krxShortSellingDaily)}`;
-      setTimeout(load, (data.refreshSeconds || 60) * 1000);
+      refreshTimer = setTimeout(load, (data.refreshSeconds || 60) * 1000);
     }
 
     function hourlyInsightPanel(payload) {
@@ -548,56 +661,29 @@
           : item.basis === 'local_observed_history'
             ? '선물 로컬 관측 히스토리 기준'
             : '기준값 확인 중';
-      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.label || item.id)}</div><div class="meta">${escapeHtml(item.market || '')} · ${escapeHtml(item.source || '')}</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(item.intensity || item.status || '확인')}</span></div><div class="volumeMain"><div><div class="volumeValue">${formatInteger(item.currentVolume)}</div><div class="volumeSub">${escapeHtml(maxLabel)}<br>평균 대비 ${escapeHtml(avgPct)} · ${escapeHtml(basisNote)}</div></div><div><div class="volumePct">${escapeHtml(maxPct)}</div><div class="meta">최대 대비</div></div></div>${item.id === 'kospi_spot_volume' ? cashInvestorPanel(investorFlows) : ''}${item.message ? `<div class="note info">${escapeHtml(item.message)}</div>` : ''}<div class="volumeTicks">${checkpoints.map(cp => volumeTick(item, cp)).join('')}</div></article>`;
+      return `<article class="volumeCard"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.label || item.id)}</div><div class="meta">${escapeHtml(item.market || '')} · ${escapeHtml(item.source || '')}</div></div><span class="volumeBadge ${escapeAttr(status)}">${escapeHtml(item.intensity || item.status || '확인')}</span></div><div class="volumeMain"><div><div class="volumeValue">${formatInteger(item.currentVolume)}<span class="valueUnit">${item.id === 'kospi_spot_volume' ? '주' : '계약'}</span></div><div class="volumeSub">${escapeHtml(maxLabel)}<br>평균 대비 ${escapeHtml(avgPct)} · ${escapeHtml(basisNote)}</div></div><div><div class="volumePct">${escapeHtml(maxPct)}</div><div class="meta">최대 대비</div></div></div>${item.id === 'kospi_spot_volume' ? cashInvestorPanel(investorFlows) : ''}${item.message ? `<div class="note info">${escapeHtml(item.message)}</div>` : ''}<div class="volumeTicks">${checkpoints.map(cp => volumeTick(item, cp)).join('')}</div></article>`;
     }
 
     function cashInvestorPanel(investorFlows) {
-      const flow = (Array.isArray(investorFlows) ? investorFlows : []).find(x => x.id === 'kospi_cash');
-      const heading = '<strong>외국인·기관 현물 수급 · KRX·NXT 통합</strong>';
-      const candidate = (Array.isArray(investorFlows) ? investorFlows : []).find(x => x.id === 'kospi_cash_candidate');
-      const reference = (Array.isArray(investorFlows) ? investorFlows : []).find(x => x.id === 'kospi_cash_krx');
-      if (!flow || flow.scope !== 'KRX_NXT' || flow.status !== 'ok') {
-        const refRows = Array.isArray(reference?.rows) ? reference.rows : [];
-        const ref = ['외국인', '기관'].map(name => {
-          const row = refRows.find(r => String(r.investor || '').startsWith(name + '('));
-          const net = row?.netBuy;
-          return `${name} ${typeof net === 'number' && Number.isFinite(net) ? `${formatInteger(Math.abs(net) * 10)}억원 ${net > 0 ? '순매수' : net < 0 ? '순매도' : '균형'}` : '확인 중'}`;
-        }).join(' · ');
-        return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">통합 수급 연결·검증 대기<br>KRX 단독값으로 통합 수급을 대신하지 않습니다.</div>${cashCandidatePanel(candidate)}${reference ? `<details><summary>KRX 참고값 보기 · 통합값 아님</summary><div class="cashInvestorMeta">${escapeHtml(ref)}<br>조회 ${escapeHtml(reference.currentDatetime || reference.fetchedAt || '')} · 실제 집계 시각 미검증</div></details>` : ''}</div>`;
-      }
-      if (!flow || flow.unit !== '십억원') return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">거래대금 자료 확인 중 · 거래량(주) 아님</div></div>`;
-      const today = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Seoul', year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()).replaceAll('-', '');
-      const age = (Date.now() - Date.parse(flow.fetchedAt)) / 1000;
-      const state = flow.tradeDate !== today ? '이전 거래일 최종 집계' : flow.status !== 'ok' || !Number.isFinite(age) || age > 300 || age < -60 ? '지연·상태 확인 필요' : '당일 누적';
-      const rows = Array.isArray(flow.rows) ? flow.rows : [];
-      const amount = value => value == null || value === '' || !Number.isFinite(Number(value)) ? '—' : `${formatInteger(Number(value) * 10)}억원`;
+      const flows = Array.isArray(investorFlows) ? investorFlows : [];
+      const selected = flows.find(x => x.id === 'kospi_cash' && x.scope === 'KRX');
+      // Cached pre-deployment payloads use a different id. Display exactly that
+      // source while data deployment catches up, never the older marketplace value.
+      const flow = selected || flows.find(x => x.id === 'kospi_cash_candidate');
+      const age = (Date.now() - Date.parse(flow?.fetchedAt || '')) / 1000;
+      const usable = flow && ['ok','observing'].includes(flow.status) && flow.unit === '십억원'
+        && Number.isFinite(age) && age >= -10 && age <= 180;
+      const clock = flow?.fetchedAt ? new Date(flow.fetchedAt).toLocaleTimeString('ko-KR', {timeZone:'Asia/Seoul',hour12:false}) : '—';
+      const amount = v => typeof v !== 'number' || !Number.isFinite(v) ? '—' : `${formatValue(Math.abs(v) * 10, 0)}<span class="cashUnit">억원</span>`;
       const actors = [['외국인', /^외국인(?:\(|$)/], ['기관', /^기관(?:합계|계|\(|$)/]].map(([name, pattern]) => {
-        const matches = rows.filter(row => pattern.test(row.investor || ''));
+        const matches = usable ? (flow.rows || []).filter(r => pattern.test(r.investor || '')) : [];
         const row = matches.length === 1 ? matches[0] : {};
-        const net = row.netBuy == null || row.netBuy === '' ? NaN : Number(row.netBuy);
-        const label = !Number.isFinite(net) ? '집계 대기' : net > 0 ? '순매수' : net < 0 ? '순매도' : '매수·매도 균형';
-        const cls = net > 0 ? 'pos' : net < 0 ? 'neg' : '';
-        return `<div class="cashInvestor"><strong>${name}</strong><div class="cashInvestorNet ${cls}">${amount(Number.isFinite(net) ? Math.abs(net) : null)}</div><div>${label}</div><div class="cashInvestorDetail">매수 ${amount(row.buy)}<br>매도 ${amount(row.sell)}</div></div>`;
-      }).join('');
-      return `<div class="cashInvestors">${heading}<div class="cashInvestorMeta">${escapeHtml(state)} · 거래대금(억원), 거래량(주) 아님<br>수집 ${escapeHtml(flow.observationTimestamp || flow.fetchedAt || '확인 중')} · ${escapeHtml(flow.provider || flow.source || 'API')} · 통합<br>실제 거래소 집계 시각과 다를 수 있습니다.</div><div class="cashInvestorGrid">${actors}</div></div>`;
-    }
-
-    function cashCandidatePanel(candidate) {
-      if (!candidate) return '';
-      const clock = value => !value || !Number.isFinite(Date.parse(value)) ? '확인 중' : new Date(value).toLocaleTimeString('ko-KR', {timeZone:'Asia/Seoul',hour12:false});
-      const age = (Date.now()-Date.parse(candidate.fetchedAt))/1000;
-      if (candidate.status !== 'observing' || !Number.isFinite(age) || age < -30 || age > 180) return '<div class="cashInvestorMeta">한국투자 시험 관측 · 최근 수집 오류/지연. 현재 수급 판단 보류.</div>';
-      const rows = Array.isArray(candidate.rows) ? candidate.rows : [];
-      const report = candidate.cadence || {};
-      const actors = [['외국인','foreign'],['기관','institution']].map(([label,key]) => {
-        const matches = rows.filter(r => r.investor === label+'(십억원)');
-        const net = matches.length === 1 ? matches[0].netBuy : null;
+        const net = row.netBuy;
         const good = typeof net === 'number' && Number.isFinite(net);
-        const delta = report.actorLastDelta?.[key];
-        const deltaText = delta ? `직전 수집 대비 ${delta.rawNetDelta>0?'+':delta.rawNetDelta<0?'-':''}${formatValue(Math.abs(delta.rawNetDelta)/100,2)}억원 (${formatInteger(delta.seconds)}초)` : '비교 기록 축적 중';
-        return `<div class="cashInvestor"><strong>${label}</strong><div class="cashInvestorNet">${good ? formatInteger(Math.abs(net)*10)+'억원' : '—'}</div><div>${!good ? '확인 중' : net>0 ? '순매수' : net<0 ? '순매도' : '매수·매도 균형'}</div><div class="cashInvestorDetail">${escapeHtml(deltaText)}<br>최근 값 변경 관측 ${escapeHtml(clock(report.actorLastChangedAt?.[key]))}</div></div>`;
+        const label = !good ? '자료 확인' : net > 0 ? '순매수' : net < 0 ? '순매도' : '균형';
+        return `<div class="cashInvestor"><strong>${name}</strong><div class="cashInvestorNet ${net > 0 ? 'pos' : net < 0 ? 'neg' : ''}">${amount(net)}</div><div>${label}</div><div class="cashInvestorDetail">매수 ${amount(row.buy)}<br>매도 ${amount(row.sell)}</div></div>`;
       }).join('');
-      return `<div class="cashInvestorMeta"><strong>한국투자 KOSPI 현물 · 시험 관측</strong><br>KRX·NXT 통합 범위·자료 시차 미검증<br>수집 ${escapeHtml(clock(candidate.fetchedAt))} KST · 매분 저장 · ${formatInteger(report.validPolls || 0)}회 관측<br>원문 기준일·집계 시각 없음 · ${escapeHtml(candidate.unitVerification || '단위 검증 중')}</div><div class="cashInvestorGrid">${actors}</div><div class="cashInvestorMeta">수치가 같아도 원천이 갱신되지 않았다고 단정하지 않습니다.</div>`;
+      return `<div class="cashInvestors"><div class="cashHeading"><strong>외국인·기관 현물</strong><span class="cashScope">KRX</span></div><div class="cashClock">수집 ${escapeHtml(clock)}${usable ? '' : ' · 수집 지연/오류'}</div><div class="cashInvestorGrid">${actors}</div><div class="cashInvestorMeta">한국투자 KSP/0001 · 사용자 선택 KRX 기준 · 매분 저장<br>거래량(주)이 아닌 누적 거래대금. 수집 시각은 실제 거래소 집계 시각이 아닙니다.<br>금액은 백만원 가정 환산이며 단위 교차검증은 별도입니다. KRX·NXT 통합값이 아닙니다.</div></div>`;
     }
 
     function volumeTick(item, checkpoint) {
@@ -780,7 +866,7 @@
       return ids.map(id => metrics.find(m => m.id === id)).filter(Boolean).map(m => {
         const pct = m.changePct == null ? '—' : pctFmt.format(m.changePct) + '%';
         const cls = m.changePct > 0 ? 'pos' : m.changePct < 0 ? 'neg' : '';
-        return `<a class="priorityCard" href="#metric-${escapeAttr(m.id)}" onclick="jumpToMetric('${escapeJsString(m.id)}', event)" aria-label="${escapeAttr(m.name)} 상세 지표로 이동"><div class="pname">${escapeHtml(m.name)}</div><div class="pvalue">${formatValue(m.value, m.decimals)} <span class="meta">${escapeHtml(m.unit || '')}</span></div><div class="pchange ${cls}">${pct}</div></a>`;
+        return `<a class="priorityCard" href="#metric-${escapeAttr(m.id)}" onclick="jumpToMetric('${escapeJsString(m.id)}', event)" aria-label="${escapeAttr(m.name)} 상세 지표로 이동"><div class="pname">${escapeHtml(m.name)}</div><div class="pvalue">${formatValue(m.value, m.decimals)} <span class="valueUnit">${escapeHtml(m.unit || '')}</span></div><div class="pchange ${cls}">${pct}</div></a>`;
       });
     }
 
@@ -863,7 +949,7 @@
       const changeClass = m.change > 0 ? 'pos' : m.change < 0 ? 'neg' : '';
       const changeValue = formatValue(Math.abs(m.change || 0), m.decimals);
       const change = m.change == null ? '변동값 없음' : `${m.change > 0 ? '+' : m.change < 0 ? '-' : ''}${changeValue} · ${pctFmt.format(m.changePct || 0)}%`;
-      return `<article class="card" id="metric-${escapeAttr(m.id)}"><div class="top"><div><div class="name">${escapeHtml(m.name)}</div><div class="meta">${escapeHtml(m.provider)} · ${escapeHtml(m.symbol)}</div></div><div class="status ${escapeAttr(status.level)}">${escapeHtml(status.label)}</div></div><div class="value">${formatValue(m.value, m.decimals)} <span class="meta">${escapeHtml(m.unit || '')}</span></div><div class="change ${changeClass}">${change}</div>${status.message ? `<div class="note error">${escapeHtml(status.message)}</div>` : ''}${m.delayNote ? `<div class="note">${escapeHtml(m.delayNote)}</div>` : ''}${m.displayNote ? `<div class="note info">${escapeHtml(m.displayNote)}</div>` : ''}<div class="foot">시장상태: ${escapeHtml(status.marketState || '—')}<br>시세시각: ${m.timestamp ? new Date(m.timestamp).toLocaleString('ko-KR') : '—'}<br>수집시각: ${new Date(m.fetchedAt).toLocaleString('ko-KR')}</div></article>`;
+      return `<article class="card" id="metric-${escapeAttr(m.id)}"><div class="top"><div><div class="name">${escapeHtml(m.name)}</div><div class="meta">${escapeHtml(m.provider)} · ${escapeHtml(m.symbol)}</div></div><div class="status ${escapeAttr(status.level)}">${escapeHtml(status.label)}</div></div><div class="value">${formatValue(m.value, m.decimals)} <span class="valueUnit">${escapeHtml(m.unit || '')}</span></div><div class="change ${changeClass}">${change}</div>${m.delayNote ? `<div class="briefQuality">${status.level === 'closed' ? '장마감 기준' : '지연 가능'}</div>` : ''}${status.message ? `<div class="note error">${escapeHtml(status.message)}</div>` : ''}${m.delayNote ? `<div class="note">${escapeHtml(m.delayNote)}</div>` : ''}${m.displayNote ? `<div class="note info">${escapeHtml(m.displayNote)}</div>` : ''}<div class="foot">시장상태: ${escapeHtml(status.marketState || '—')}<br>시세시각: ${m.timestamp ? new Date(m.timestamp).toLocaleString('ko-KR') : '—'}<br>수집시각: ${new Date(m.fetchedAt).toLocaleString('ko-KR')}</div></article>`;
     }
     function jumpToMetric(id, event) {
       if (event) event.preventDefault();
