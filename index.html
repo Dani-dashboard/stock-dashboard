@@ -113,6 +113,7 @@
     .volumeBadge.normal { color:#e5e7eb; border-color:rgba(148,163,184,.30); background:rgba(71,85,105,.20); }
     .volumeBadge.active { color:#fde68a; border-color:rgba(245,158,11,.36); background:rgba(120,53,15,.22); }
     .volumeBadge.high { color:#fecaca; border-color:rgba(239,68,68,.38); background:rgba(127,29,29,.24); }
+    .volumeCard[data-volume-schema="2"] .volumeSub, .volumeCard[data-volume-schema="2"] .meta, .volumeCard[data-volume-schema="2"] .note { font-size:14px; }
     .volumeMain { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:end; min-width:0; }
     .volumeMain > div { min-width:0; }
     .volumeValue { font-size:25px; font-weight:900; letter-spacing:-.045em; }
@@ -647,6 +648,16 @@
     }
 
     function volumeCard(item, checkpoints, investorFlows) {
+      if (item.schemaVersion === 2) {
+        const c = item.comparison || {}, b = item.baseline || {};
+        const daily = c.kind === 'daily_complete_reference';
+        const ratio = c.avgPct == null ? '—' : `${formatValue(c.avgPct, 1)}%`;
+        const maximum = c.maxPct == null ? '—' : `${formatValue(c.maxPct, 1)}%`;
+        const label = daily ? '일평균 대비' : '동시간 평균 대비';
+        const count = `${c.sampleCount || 0}/60일${c.status === 'complete' ? '' : ' · 참고'}`;
+        const details = `${daily ? '일간' : '동시간'} 최대 대비 ${maximum} · 당일 제외<br>하루 평균 ${formatInteger(b.dailyAverageVolume)} ${escapeHtml(item.unit || '')} (${b.sampleCount || 0}일)${item.contractSymbol ? `<br>동일 선물계약 ${escapeHtml(item.contractSymbol)} · 근월물 연속 시계열 아님` : ''}`;
+        return `<article class="volumeCard" data-volume-schema="2"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.label || item.id)}</div><div class="meta">${escapeHtml(item.market || '')} · ${escapeHtml(item.source || '')}</div></div><span class="volumeBadge ${escapeAttr(item.status || 'warn')}">${escapeHtml(item.intensity || '비교 대기')}</span></div><div class="volumeMain"><div><div class="volumeValue">${formatInteger(item.currentVolume)}<span class="valueUnit">${escapeHtml(item.unit || '')}</span></div><div class="volumeSub">최근 60거래일 · ${details}</div></div><div><div class="volumePct">${ratio}</div><div class="meta">${label}</div><div class="meta">${escapeHtml(count)}</div></div></div>${item.id === 'kospi_spot_volume' ? cashInvestorPanel(investorFlows) : ''}<div class="note info">${escapeHtml(item.message || '')}</div><div class="volumeTicks">${checkpoints.map(cp => volumeTick(item, cp)).join('')}</div></article>`;
+      }
       const status = item.status || 'warn';
       const maxPct = item.maxPct == null ? '—' : `${formatValue(item.maxPct, 1)}%`;
       const avgPct = item.avgPct == null ? '—' : `${formatValue(item.avgPct, 1)}%`;
@@ -688,7 +699,7 @@
 
     function volumeTick(item, checkpoint) {
       const row = (Array.isArray(item.snapshots) ? item.snapshots : []).find(x => x.checkpointKst === checkpoint);
-      const pct = row?.maxPct == null ? '' : ` · ${formatValue(row.maxPct, 0)}%`;
+      const pct = row?.schemaVersion === 2 && row.avgPct != null ? ` · 평균 ${formatValue(row.avgPct, 0)}% (${row.referenceCount || 0}일)` : '';
       return `<div class="volumeTick"><div class="volumeTickTime">${escapeHtml(checkpoint)}</div><div class="volumeTickValue">${row ? `${formatInteger(row.volume)}${pct}` : '대기'}</div></div>`;
     }
 
