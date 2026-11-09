@@ -653,7 +653,7 @@
         const daily = c.kind === 'daily_complete_reference';
         const ratio = c.avgPct == null ? '—' : `${formatValue(c.avgPct, 1)}%`;
         const maximum = c.maxPct == null ? '—' : `${formatValue(c.maxPct, 1)}%`;
-        const label = daily ? '일평균 대비' : '동시간 평균 대비';
+        const label = daily ? '장후 일평균 대비' : '동시간 평균 대비';
         const count = `${c.sampleCount || 0}/60일${c.status === 'complete' ? '' : ' · 참고'}`;
         const details = `${daily ? '일간' : '동시간'} 최대 대비 ${maximum} · 당일 제외<br>하루 평균 ${formatInteger(b.dailyAverageVolume)} ${escapeHtml(item.unit || '')} (${b.sampleCount || 0}일)${item.contractSymbol ? `<br>동일 선물계약 ${escapeHtml(item.contractSymbol)} · 근월물 연속 시계열 아님` : ''}`;
         return `<article class="volumeCard" data-volume-schema="2"><div class="volumeTop"><div><div class="volumeName">${escapeHtml(item.label || item.id)}</div><div class="meta">${escapeHtml(item.market || '')} · ${escapeHtml(item.source || '')}</div></div><span class="volumeBadge ${escapeAttr(item.status || 'warn')}">${escapeHtml(item.intensity || '비교 대기')}</span></div><div class="volumeMain"><div><div class="volumeValue">${formatInteger(item.currentVolume)}<span class="valueUnit">${escapeHtml(item.unit || '')}</span></div><div class="volumeSub">최근 60거래일 · ${details}</div></div><div><div class="volumePct">${ratio}</div><div class="meta">${label}</div><div class="meta">${escapeHtml(count)}</div></div></div>${item.id === 'kospi_spot_volume' ? cashInvestorPanel(investorFlows) : ''}<div class="note info">${escapeHtml(item.message || '')}</div><div class="volumeTicks">${checkpoints.map(cp => volumeTick(item, cp)).join('')}</div></article>`;
