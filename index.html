@@ -385,7 +385,7 @@
     }
     function loaderHealth() {
       let node = document.getElementById('loadHealth');
-      if (!node) { node = document.createElement('div'); node.id='loadHealth'; node.setAttribute('role','status'); node.style.cssText='font-size:14px;color:#fbbf24;padding:8px 0'; document.querySelector('.toolbar').before(node); }
+      if (!node) { node = document.createElement('div'); node.id='loadHealth'; node.setAttribute('role','status'); node.style.cssText='font-size:14px;color:#fbbf24;flex-basis:100%;line-height:1.4'; document.querySelector('header').append(node); }
       const mixed = publishedManifest?.files?.some(f => loadedHashes.has(f.file.split('/').pop()) && loadedHashes.get(f.file.split('/').pop()) !== f.sha256);
       const message = loadErrors.has('market') ? (loadedData.market ? '시세 갱신 실패 · 마지막 정상 자료 유지 · 자동 재시도 중' : '시세 연결 대기 · 자동 재시도 중') : loadErrors.size ? '일부 보조자료 갱신 지연 · 마지막 정상 자료 유지' : mixed ? '자료 게시 갱신 중 · 항목별 기준 시각을 확인해 주세요' : '';
       node.textContent = message; node.hidden = !message;
