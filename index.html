@@ -362,33 +362,60 @@
     const DATA_BASE_URL = (window.STOCK_DASHBOARD_DATA_BASE_URL || 'https://fkjulfhlpkwavrxegaju.supabase.co/storage/v1/object/public/stock-dashboard/data').replace(/\/$/, '');
     function dataUrl(file) { return `${DATA_BASE_URL}/${file}?ts=${Date.now()}`; }
     function formatValue(value, decimals) { if (value == null) return '—'; if (Number.isInteger(decimals)) return new Intl.NumberFormat('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value); return defaultFmt.format(value); }
-    let refreshTimer;
-    async function load() {
-      clearTimeout(refreshTimer);
+    let refreshTimer, loadInFlight = false;
+    const loadedData = { market:null, events:null, state:null, insight:null };
+    const loadErrors = new Set();
+    const loadedHashes = new Map();
+    let publishedManifest = null;
+    async function boundedJson(file, timeoutMs = 6000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const [marketRes, eventData, marketState, hourlyInsight] = await Promise.all([
-          fetch(dataUrl('latest.json')),
-          loadEvents(),
-          loadMarketState(),
-          loadHourlyInsight()
+        const response = await fetch(dataUrl(file), { signal:controller.signal, cache:'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const text = await response.text(), value = JSON.parse(text);
+        if (!value || typeof value !== 'object') throw new Error('Invalid data');
+        if (file === 'latest.json' && (!Array.isArray(value.metrics) || !value.summary || !Number.isFinite(Date.parse(value.generatedAt)))) throw new Error('Invalid market snapshot');
+        if (window.crypto?.subtle) {
+          const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+          loadedHashes.set(file, [...new Uint8Array(hash)].map(x => x.toString(16).padStart(2,'0')).join(''));
+        }
+        return value;
+      } finally { clearTimeout(timer); }
+    }
+    function loaderHealth() {
+      let node = document.getElementById('loadHealth');
+      if (!node) { node = document.createElement('div'); node.id='loadHealth'; node.setAttribute('role','status'); node.style.cssText='font-size:14px;color:#fbbf24;padding:8px 0'; document.querySelector('.toolbar').before(node); }
+      const mixed = publishedManifest?.files?.some(f => loadedHashes.has(f.file.split('/').pop()) && loadedHashes.get(f.file.split('/').pop()) !== f.sha256);
+      const message = loadErrors.has('market') ? (loadedData.market ? '시세 갱신 실패 · 마지막 정상 자료 유지 · 자동 재시도 중' : '시세 연결 대기 · 자동 재시도 중') : loadErrors.size ? '일부 보조자료 갱신 지연 · 마지막 정상 자료 유지' : mixed ? '자료 게시 갱신 중 · 항목별 기준 시각을 확인해 주세요' : '';
+      node.textContent = message; node.hidden = !message;
+    }
+    function paintLoadedData() {
+      if (loadedData.market) render(loadedData.market, loadedData.events || {events:[]}, loadedData.state, loadedData.insight);
+      loaderHealth();
+    }
+    async function load() {
+      if (loadInFlight) return;
+      clearTimeout(refreshTimer); loadInFlight = true;
+      const request = async (key, file, timeout) => {
+        try { const value=await boundedJson(file, timeout); loadedData[key]=value; loadErrors.delete(key); }
+        catch { loadErrors.add(key); }
+        paintLoadedData();
+      };
+      try {
+        // Each source paints independently; a slow calendar cannot hold prices hostage.
+        await Promise.allSettled([
+          request('market','latest.json',8000), request('events','events.json',4000),
+          request('state','market-state-10m.json',4000), request('insight','hourly-ai-insight.json',4000),
+          boundedJson('manifest.json',4000).then(value=>{publishedManifest=value;loaderHealth();}).catch(()=>{})
         ]);
-        if (!marketRes.ok) throw new Error('latest.json 로드 실패');
-        render(await marketRes.json(), eventData, marketState, hourlyInsight);
+      } finally {
+        loadInFlight = false;
+        refreshTimer = setTimeout(load, Math.max(10000, Number(loadedData.market?.refreshSeconds || 60)*1000));
       }
-      catch (err) { document.getElementById('summary').innerHTML = '<span class="pill">데이터 로드 오류</span>'; document.getElementById('hourlyInsightSlot').innerHTML = ''; document.getElementById('content').innerHTML = `<div class="notice">${err.message}</div>`; }
     }
-    async function loadEvents() {
-      try { const res = await fetch(dataUrl('events.json')); return res.ok ? await res.json() : { events: [], sourceNote:'events.json 없음' }; }
-      catch { return { events: [], sourceNote:'events.json 로드 실패' }; }
-    }
-    async function loadMarketState() {
-      try { const res = await fetch(dataUrl('market-state-10m.json')); return res.ok ? await res.json() : null; }
-      catch { return null; }
-    }
-    async function loadHourlyInsight() {
-      try { const res = await fetch(dataUrl('hourly-ai-insight.json')); return res.ok ? await res.json() : null; }
-      catch { return null; }
-    }
+    window.addEventListener('online', () => load());
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
     function render(data, eventData, marketState, hourlyInsight) {
       window.__cashSnapshotAt = data.generatedAt;
       window.__latestMetrics = Array.isArray(data.metrics) ? data.metrics : [];
@@ -399,7 +426,6 @@
       const orderedGroups = (data.groups || Object.keys(groups).map(key => ({ key, label:key, description:'' })));
       document.getElementById('hourlyInsightSlot').innerHTML = hourlyInsightPanel(hourlyInsight);
       document.getElementById('content').innerHTML = `<section class="priorityGrid">${priorityCards(data).join('')}</section>${marketVolumePanel(data.marketVolumes, data.investorFlows)}${putCallRatioPanel(data.putCallRatio)}${weeklyCalendar(eventData)}${orderedGroups.map(g => groupSection(g, groups[g.key] || [])).join('')}${koreaSpecialIndicatorsPanel(data.koreaSpecialIndicators)}${marketIntelligencePanel(marketState)}${shortSellingPanel(data.krxShortSellingDaily)}`;
-      refreshTimer = setTimeout(load, (data.refreshSeconds || 60) * 1000);
     }
 
     function hourlyInsightPanel(payload) {
